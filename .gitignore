@@ -2,4 +2,8 @@
 
 data/*
 code/archive/*
-amber_reources/*
+amber_resources/*
+.Rprofile
+block_pws.csv
+duckdb_spatial_migration_notes.md
+air.toml
