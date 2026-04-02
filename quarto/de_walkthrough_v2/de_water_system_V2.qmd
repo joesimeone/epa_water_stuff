@@ -1,0 +1,798 @@
+---
+title: "Intersecting EPA Public Water System v2 Data"
+format:
+    html:
+        echo: false
+        mainfont: 'inter'
+        table-of-contents: true
+        number-sections: true
+        number-depth: 2
+        embed-resources: true
+---
+
+
+```{r}
+#| label: 'pre-reqs'
+#| include: false
+
+# Imports ----------------------------------------------------------------
+library(sf)
+library(tidyverse)
+library(mapgl)
+library(rcartocolor)
+
+# Load pre-processed Delaware spatial data (from de_data_prep.R) ---------
+epa_water_de         <- readRDS("data/epa_water_de.rds")
+block10_group_de     <- readRDS("data/block10_group_de.rds")
+tract10_pws_de       <- readRDS("data/tract10_pws_de.rds")
+block10_group_pws_de <- readRDS("data/block10_group_pws_de.rds")
+tract10_de           <- readRDS("data/tract10_de.rds")
+
+options(USE_TIGRIS_CACHE = TRUE)
+st_bounds <-
+  tigris::states(resolution = '5m', year = 2010)
+
+
+PWS_dat <- read.csv(
+  "C:/Users/js5466/OneDrive - Drexel University/Palmer,Amber's files - Preliminary_data_PWScontam/PWS_JOINED_BG_POP.csv"
+)
+
+pws_dat_v1 <-
+  PWS_dat |>
+  select(CT_GEOID, pwsid, starts_with(c('pf', 'chr', 'chl', 'mlyb'))) |>
+  mutate(
+    CT_GEOID = as.character(CT_GEOID),
+    geo_tweak = stringr::str_pad(
+      CT_GEOID,
+      width = 11,
+      side = "left",
+      pad = "0"
+    )
+  )
+
+```
+
+# Overview
+
+Drexel researchers want to model the association between cancer related mortality and select water contaminants. Data on this study come from several
+sources:
+
+1. [Mortality Disparities And Communities Cohort (MDAC)](https://www.census.gov/topics/research/mdac.html)
+1. [EPA Public Water System Data](https://www.epa.gov/ground-water-and-drinking-water/public-water-system-service-areas)
+1. [Contaminants Data (Various Sources)](https://www.epa.gov/DWdata)
+
+MDAC combines national level census micro-data with the health outcomes from the CDC's death file and information from the Centers for Medicare & Medicaid to create a cohort of US respondents from 2008 - 2019. The EPA uses a combination of available government documentation and predictive modeling to produce public water system boundaries across the United States, which can be joined with water contaminants data.
+
+Because these sources have misaligned geographies, we intersect 2010 census block groups with Public Water Systems to create population weights for each tract-water system intersection. By considering how many people are actually served by water systems within each tract, we can more accurately assign a contaminant exposure level.
+
+This document outlines the intersection and reweighting process. While we've applied this approach to the contiguous United States, here we'll use **Delaware** as an example.
+
+
+## Whole Game
+
+```{mermaid}
+
+
+flowchart TD
+    A["Census block groups (2010)"] --> S1
+    B["EPA water system boundaries v2"] --> S1
+
+    S1["1. Intersect 2010 census block groups | EPA Water System data and areally reweight:
+
+    $$bg\_wgt\_pop = pop \times \frac{overlap\_area}{block\_area}$$"]
+
+    S1 --> S2["2. Scale to tract × PWS:
+
+    $$pop\_bg\_pws = \sum bg\_wgt\_pop$$"]
+
+    S2 --> S3
+
+    C["Census tract total population"] --> S3
+
+    S3["3. Sum to all people in tract served by any water systen; cap at tract total:
+
+    $$ct\_pop\_pws = \min\left(\sum pop\_bg\_pws,\; tract\_pop\right)$$"]
+
+    S3 --> S4["4. Create Population weight:
+
+    $$w = \frac{pop\_bg\_pws}{ct\_pop\_pws}$$"]
+
+    S4 --> S5["5. Weight contaminants:
+
+    $$c_{weighted} = c \times w$$"]
+
+    S5 --> S6["6. Summarize to tract; flag coverage:
+
+    $$included = \frac{ct\_pop\_pws}{tract\_pop} > 0.5$$"]
+
+    S6 --> OUT[("Final tract-level dataset")]
+```
+
+The diagram above walks you through our re-weighting protocol. (It's really small right now, you can zoom in with **ctrl +** and zoom out with **ctrl - **)
+# Getting Started
+
+## Problem
+
+There's a mismatch between the geographic granularity of our contaminants data (public water system) and the smallest geographic granularity of the MDAC cohort (tract). If a census tract is served by two service systems, we might plausibly assign contaminants from either system to our respondents. If only a tiny part of a census tract is serviced by a single system, it might not make sense to assign every member of the cohort who lives in this tract the same contaminant exposure.
+
+## Solution
+
+We use geographic intersections between **census block groups** and **public water system** boundaries to make more informed exposure assignments. Block groups are smaller  subsets of census tracts. Using these subsets and their overlap with public water systems, we can estimate how many people were actually served by a water system. The population-weighted overlap between block groups and water system boundaries lets us estimate what fraction of a tract's residents were actually served by each system, which we then use to assign contaminant exposure estimates proportionally.
+
+## Delaware's Boundaries
+
+```{r}
+#| label: 'map check 1'
+#| echo: false
+#| fig-cap: '*2010 Census Block Groups vs EPA Public System Water Boundaries* (Click geometry for more info)'
+#| fig-width: 8
+#| fig-height: 8
+
+check_boundary_files <- function(
+  water_dat,
+  block_dat,
+  st_code,
+  st_abb
+) {
+  ## Anchor Boundaries
+  st_anchor <-
+    st_bounds |>
+    filter(GEOID10 == st_code) |>
+    st_as_sf() |>
+    st_transform(5070)
+
+  epa_tst <-
+    water_dat |>
+    filter(Primacy_Agency == st_abb)
+
+  block_tst <-
+    block_dat |>
+    filter(st_fips == st_code)
+
+  block_tst$map_popup <- str_glue(
+    "<div style='text-align: center;'>
+    <u>{block_tst$NAME}</u>
+  </div>
+  <br> <strong>Block ID:</strong> {block_tst$GEOID}
+  <br> <strong>Population:</strong> {scales::comma(block_tst$value)}"
+  )
+
+  epa_tst$map_popup <- str_glue(
+    "<div style='text-align: center;'>
+    <u>{epa_tst$PWS_Name}</u>
+  </div>
+  <br> <strong>System ID (PWSID):</strong> {epa_tst$PWSID}
+    <br> <strong>Service Area Type:</strong> {epa_tst$Service_Area_Type}
+  <br> <strong>Population Served:</strong> {scales::comma(epa_tst$Population_Served_Count)}
+  <br> <strong>Service Connections:</strong> {scales::comma(epa_tst$Service_Connections_Count)}
+  <br> <strong>Symbology:</strong> {epa_tst$Symbology_Field}
+  <br> <strong>Model Method:</strong> {epa_tst$Model_Method}"
+  )
+
+  map_to_check <-
+    maplibre(
+      bounds = st_anchor,
+      style = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+    ) |>
+    # Tracts as a light fill at the bottom
+    add_fill_layer(
+      id = 'tract_fill',
+      source = block_tst,
+      fill_color = "#B2E2E2",
+      fill_opacity = 0.4,
+      popup = "map_popup"
+    ) |>
+    add_line_layer(
+      id = 'block_outline',
+      source = block_tst,
+      line_color = "darkgray",
+      line_width = 1.2,
+      line_opacity = 0.9,
+      line_dasharray = c(2, 2)
+    ) |>
+    # Blocks as outlines only — no fill so tracts still visible
+    # Water systems on top as bold lines with a light fill so they pop
+    add_fill_layer(
+      id = 'water_fill',
+      source = epa_tst,
+      fill_color = "#0868AC",
+      fill_opacity = 0.15,
+      popup = 'map_popup'
+    ) |>
+    add_line_layer(
+      id = 'water_sys_outline',
+      source = epa_tst,
+      line_color = "#0868AC",
+      line_width = 2.5,
+      line_opacity = 1
+    ) |>
+    # State boundary last so it sits on top of everything
+    add_line_layer(
+      id = 'st_outline',
+      source = st_anchor,
+      line_color = 'black',
+      line_width = 1.5,
+      line_opacity = 0.7
+    )
+
+  return(map_to_check)
+}
+
+
+check_boundary_files(
+  block_dat = block10_group_de,
+  water_dat = epa_water_de,
+  st_code = '10',
+  st_abb = 'DE'
+)
+```
+
+```{r}
+#| label: intersect map 1
+#| echo: false
+
+demo_systems <- c(
+  'DAGSBORO|SELBYVILLE|WILMINGTON|ARTESIAN WATER|ELLENDALE|CAPTAIN'
+)
+
+view_census_pws <- function(
+  iws_dat,
+  st_code,
+  glue_str,
+  census_boundary = 'tract',
+  carto_palette = 'Prism',
+  show_legend = TRUE
+) {
+  st_anchor <-
+    st_bounds |>
+    filter(GEOID10 == st_code) |>
+    st_as_sf() |>
+    st_transform(5070)
+
+  census_pws_dat <-
+    iws_dat |>
+    filter(str_detect(PWS_Name, demo_systems))
+
+  # --- build PWS_Name → color lookup using rcartocolor ---
+  pws_names <- sort(unique(census_pws_dat$PWS_Name))
+  n_names <- length(pws_names)
+  pal_colors <- rcartocolor::carto_pal(
+    n = max(n_names, 3),
+    name = carto_palette
+  )[seq_len(n_names)]
+
+  if (census_boundary == 'tract') {
+    census_pws_dat$map_popup <-
+      str_glue(
+        "<div style='text-align: center;'>
+    <u>{census_pws_dat$tract_pws_name}</u>
+  </div>
+  <br> <strong> Tract Population:</strong> {scales::comma(census_pws_dat$value)}
+  <br> <strong> EPA Population Served Estimate:</strong> {scales::comma(census_pws_dat$Population_Served_Count)}
+  <br> <strong>Service Area Type:</strong> {census_pws_dat$Service_Area_Type}
+  <br> <strong>Tract Area:</strong> {scales::comma(census_pws_dat$tract_5070_area)}
+  <br> <strong>Water System Area:</strong> {scales::comma(census_pws_dat$epa_water_v2_5070_area)}
+  <br> <strong>Overlap Area:</strong> {scales::comma(census_pws_dat$overlap_area)}"
+      )
+  } else {
+    census_pws_dat$map_popup <-
+      str_glue(
+        "<div style='text-align: center;'>
+    <u>{census_pws_dat$NAME}</u>
+  </div>
+  <br> <strong> Block Group Population:</strong> {scales::comma(census_pws_dat$value)}
+  <br> <strong> EPA Population Served Estimate:</strong> {scales::comma(census_pws_dat$Population_Served_Count)}
+  <br> <strong>Service Area Type:</strong> {census_pws_dat$Service_Area_Type}
+  <br> <strong>Block Group Area:</strong> {scales::comma(census_pws_dat$block10_group_5070_area)}
+  <br> <strong>Overlap Area:</strong> {scales::comma(census_pws_dat$overlap_area)}"
+      )
+  }
+
+  its_map <-
+    maplibre(
+      bounds = st_anchor,
+      style = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+    ) |>
+    add_fill_layer(
+      id = 'intersect_fill',
+      source = census_pws_dat,
+      fill_color = match_expr(
+        column = "PWS_Name",
+        values = pws_names,
+        stops = pal_colors,
+        default = "lightgray"
+      ),
+      fill_opacity = .85,
+      popup = 'map_popup'
+    ) |>
+    add_line_layer(
+      id = 'intersect_outline',
+      source = census_pws_dat,
+      line_color = "lightgray",
+      line_width = .95,
+      line_opacity = .85,
+      line_dasharray = c(2, 2)
+    )
+
+  if (show_legend) {
+    its_map <- its_map |>
+      add_categorical_legend(
+        legend_title = "Water System",
+        values = pws_names,
+        colors = pal_colors,
+        circular_patches = FALSE
+      )
+  }
+
+  return(its_map)
+}
+
+
+#view_census_pws(tract10_pws_de, '10')
+```
+
+# Tract & Public Water System Intersection
+
+Above, I overlaid all tracts and water systems boundaries on top of one another. Users will see that the entire map is filled with color. Below, I'll filter down to those sample public water systems and intersect them with tracts.
+```{r}
+#| label: block10 pws map
+#| echo: false
+##| fig-cap: '*2010 Census Block Groups Intersected with Select Public Water Systems* (Click geometry for more info)'
+#| fig-width: 8
+#| fig-height: 8
+
+block10_group_pws_map <-
+  view_census_pws(
+    block10_group_pws_de,
+    st_code = '10',
+    glue_str = '{NAME} | {PWS_Name}',
+    carto_palette = 'Bold',
+    census_boundary = 'block'
+  )
+
+block10_group_pws_map
+
+
+```
+
+When I apply an intersection operation, R checks whether two geometries overlap, and if so, returns a new geometry representing only the area where they intersect — clipping away everything outside the overlap. Now, only the areas where tracts and water systems overlap are returned, with each tract-water system intersection rendered as its own polygon. To see how much each new polygon overlaps, users can click on a colored section of the map.
+
+We can see how many tracts & blocks were intersected with each water system like so:
+
+```{r}
+#| echo: true
+#| collapse: true
+#| code-fold: true
+
+block_pws_counts <-
+  block10_group_pws_de |>
+  st_drop_geometry() |>
+  filter(str_detect(PWS_Name, demo_systems)) |>
+  summarise(n_blocks = n(), .by = c(PWS_Name))
+
+tract_pws_counts <-
+  block10_group_pws_de |>
+  st_drop_geometry() |>
+  filter(str_detect(PWS_Name, demo_systems)) |>
+  mutate(tract_geoid = substr(GEOID, 1, 11)) |>
+  distinct(tract_geoid, PWS_Name) |>
+  summarise(n_tracts = n(), .by = c(PWS_Name))
+
+tract_pws_counts |>
+  left_join(block_pws_counts) |>
+  arrange(desc(n_blocks))
+
+```
+
+These relationships underly the entire reweighting protocol.
+
+# Contaminants Reweighting Protocol
+
+With block group population estimates, tract population estimates, and intersection areas between public water systems and block groups, we can re-weight our contaminant exposures based on how many people were 'truly' exposed.
+
+```{r}
+#| include: false
+
+de_contam_sys <-
+  pws_dat_v1 |>
+  mutate(st_fips = substr(geo_tweak, 1, 2)) |>
+  filter(st_fips == '10') |>
+  pull(pwsid)
+
+pws_reweighted <-
+  block10_group_pws_de |>
+  st_drop_geometry() |>
+  filter(PWSID %in% de_contam_sys) |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  summarise(
+    bg_wgt_pop = sum(bg_wgt_pop),
+    total_unwgt_pop = sum(value),
+    .by = c(tract_geoid, PWSID)
+  ) |>
+  ## Join total area info from an intersected tract --> public water system dataset
+  left_join(
+    tract10_pws_de |>
+      st_drop_geometry() |>
+      select(
+        GEOID,
+        PWSID,
+        PWS_Name,
+        tract10_5070_area,
+        epa_water_v2_5070_area,
+        overlap_area
+      ),
+    by = c('tract_geoid' = 'GEOID', 'PWSID')
+  ) |>
+  filter(bg_wgt_pop != 0)
+
+```
+
+## Step 1 | Areal weights
+
+At this point, we've already completed the intersection. We start with 2010 census block groups and EPA public water system boundaries, compute their geographic overlap, and use the resulting intersection areas to create areal weights.
+
+$$bg\_wgt\_pop = pop \times \frac{overlap\_area}{block\_area}$$
+
+**Interpretation:** How many actual people in each block group are served by an intersecting water system
+
+### Code & Data Example
+
+We start by dividing the overlapping area & total block area to create a weight. Then we multiply the block group's population by
+this weight:
+
+```{r}
+#| echo: true
+#| code-fold: true
+
+block10_group_pws_de |>
+  st_drop_geometry() |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt,
+    bg_wgt_pop = round(bg_wgt_pop, 3)
+  ) |>
+  select(
+    tract_geoid,
+    block_geoid = GEOID,
+    PWS_Name,
+    value,
+    wgt,
+    bg_wgt_pop,
+    overlap_area,
+    block10_group_5070_area
+  ) |>
+  arrange(tract_geoid) |>
+  head(10) |>
+  reactable::reactable()
+
+
+```
+
+----
+
+Block group **1001** has an estimated 2,637 people. 1,724,054 of its 4,9674,152.68 meters squared intersects with Artesian Northern Kent Regional Water System. We take this ratio of intersected land area and total block group area and multiply it with the raw population estimates to get roughly **91.52**.
+
+In other words, when taking into account how much of the block physically intersects with the Artesian North Kent Water System, we think that 91.52 of the 2,637 estimated residents are likely served by this system.
+
+## Step 2 | Scale to Tract * Water System Level
+
+Scale reweighted population values up to census tract – public water system level.
+
+**Interpretation:**  How many actual people in each block group are served by an intersected water system.
+
+$$pop\_bg\_pws = \sum bg\_wgt\_pop$$
+
+### Code & Data Example
+
+```{r}
+#| echo: true
+#| code-fold: true
+
+block10_group_pws_de |>
+  st_drop_geometry() |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  summarise(
+    bg_wgt_pop = sum(bg_wgt_pop),
+    total_unwgt_pop = sum(value),
+    .by = c(tract_geoid, PWSID, PWS_Name)
+  ) |>
+  arrange(tract_geoid, PWSID) |>
+  head(10) |>
+  reactable::reactable()
+
+```
+
+-----
+
+Sticking with tract **100**, we see that **Artesian Northern Kent Regional** serves roughly 94.05 people. Absent step one's reweighting, this number would've ben **4,811** (the number of people estimated to live in each block that intersects with Artesian).
+
+The line level below make this more concrete:
+
+```{r}
+#| echo: true
+#| code-fold: true
+
+block10_group_pws_de |>
+  st_drop_geometry() |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  filter(
+    PWS_Name == 'ARTESIAN NORTHERN KENT REGIONAL',
+    tract_geoid == '10001040100'
+  ) |>
+  select(
+    tract_geoid,
+    GEOID,
+    PWS_Name,
+    bg_wgt_pop,
+    value,
+    wgt,
+    overlap_area,
+    block10_group_5070_area
+  ) |>
+  reactable::reactable()
+```
+
+-----
+
+Artesian intersected with 2 census block groups in tract 100 (1001 & 1002). We sums 91.52 and 2.53 to estimate how many people in this tract were served by Artestian Northern Kent.
+
+## Step 3 | Derive water system service across entire tract
+
+Sum the census tract – water system population estimate to the tract level. Cap these tract level estimates at the true census tract estimate to address double counted block groups.
+
+**Interpretation:** The number of people in each census tract served by any water system
+
+$$ct\_pop\_pws = \min\left(\sum pop\_bg\_pws,\; tract\_pop\right)$$
+
+### Code & Data Example
+
+```{r}
+#| echo: true
+#| code-fold: true
+
+## Get tract total tract populations from scaled & reweighted water system ## intersected file
+pws_tract_pop <-
+  pws_reweighted |>
+  summarise(
+    n_pws = n(),
+    ct_pop_pws = sum(bg_wgt_pop),
+    .by = c(tract_geoid)
+  )
+
+## Actual Tract total population estimate
+ct_pop_joe <-
+  tract10_de |>
+  arrange(GEOID)
+
+## Cap population at actual tract level to deal with double counted block groups
+## derive some coverage stats
+pws_populations <-
+  pws_reweighted |>
+  left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
+  left_join(ct_pop_joe, by = join_by('tract_geoid' == 'GEOID')) |>
+  mutate(
+    ct_pop_pws_relevel = pmin(ct_pop_pws, tract_total_pop)
+  ) |>
+  mutate(
+    pws_ct_total_prop = round(bg_wgt_pop / tract_total_pop, 2), # Proportion of PWS to total CT
+    pws_ct_pwsarea_prop = round(bg_wgt_pop / ct_pop_pws, 2) # Proportion of PWS to CT PWS area
+  )
+pws_populations |>
+  arrange(tract_geoid) |>
+  head(10) |>
+  reactable::reactable()
+
+```
+
+----
+
+In tract **100**, we estimate that there are **119.47** people (`ct_pop_pws`) served by 3 water systems - **Artesian**, **Kenton Pump District**, and **Twin Maples Trailer Park**.
+
+We compare this value to to the true tract population estimate (`tract_total_pop`: 6,541) to see if it exceeds this value. In this case, it does not, and so we store the 119.47 in a variable called `ct_pop_pws_relevel`.
+
+Users might wonder why we need this capping thing:
+
+```{r}
+#| echo: true
+#| collapse: true
+
+pws_populations |>
+  select(tract_geoid, PWSID, ct_pop_pws, tract_total_pop) |>
+  filter(ct_pop_pws > tract_total_pop) |>
+  head(5)
+```
+
+In a handful of cases (36), our tract population served by a water system estimate is higher than the tract's total population. This is because a block group straddled systems and was double counted.
+
+```{r}
+#| echo: true
+#| collapse: true
+
+block10_group_pws_de |>
+  st_drop_geometry() |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  filter(tract_geoid == '10003014702') |>
+  select(tract_geoid, block_geoid = GEOID, PWS_Name, bg_wgt_pop, value)
+
+
+```
+
+Here, you see that block **021** intersects with both the **Newark Water Department** and **Veolia**. This means that the initial 1,927 value got weighted twice. When we sum to tract level, this double counting can push the number higher than the number of people who actually live in a tract.
+
+## Step 4 | Create population weight
+
+Divide the number of people served by each tract water system intersection by the number of people in each tract served by any water system to produce a population weight.
+
+**Interpretation:** Proportion of people served by specific water system in each tract versus people served by any water system.
+
+$$w = \frac{pop\_bg\_pws}{ct\_pop\_pws}$$
+
+### Code & Data Example
+
+Now we take the proportion of people served by each tract - water system over the total number of people in the tract served by any water system to produce our final contaminant weights.
+
+
+```{r}
+#| echo: true
+#| collapse: true
+
+pws_contam <-
+  pws_populations |>
+  mutate(st_fips = substr(tract_geoid, 1, 2)) |>
+  filter(
+    st_fips == '10'
+  ) |>
+  inner_join(
+    pws_dat_v1,
+    by = join_by(PWSID == pwsid, tract_geoid == geo_tweak)
+  ) |>
+  distinct(tract_geoid, PWSID, .keep_all = TRUE) |> ## Why are there duplicates?
+  mutate(
+    wgt_flag = if_else(n_pws > 1, 1, 0), # Will help us determine whether we need to weight contaminants estimates or not
+    population_weight = bg_wgt_pop / ct_pop_pws_relevel # Population in each tract water system / total population served by each water system
+  ) |>
+  group_by(tract_geoid, wgt_flag) |>
+  mutate(
+    pop_weight_sum = sum(population_weight, na.rm = TRUE),
+    population_weight = if_else(
+      pop_weight_sum > 1,
+      population_weight / pop_weight_sum,
+      population_weight
+    )
+  ) |>
+  ungroup()
+
+pws_contam |>
+  select(
+    tract_geoid,
+    PWS_Name,
+    n_pws,
+    bg_wgt_pop,
+    ct_pop_pws_relevel,
+    population_weight
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 5))) |>
+  filter(tract_geoid == '10003015000')
+
+```
+
+----
+
+Here, tract **5000** intersects with 3 water systems - **Artesian**, **Veolia** & **Municipal Services Commission**. From `bg_wgt_pop`, we can infer that very small areas of this tract intersect with Veoiia and Municipal Services Commission, and the bulk of people are served by Artesian. By up-weighting contaminants from Arteisan and down-weighting contaminants from Veoilia and Municipal Services, we produce a more accurate estimate of contaminants exposure.
+
+Additionally, notice that the population weight associated with artesian is 1 because so much of the population is served by this system. This means that, when we scale to tract level, the contaminant value for a person who lives in this tract will be almost entirely driven by Artesian.
+
+This is also the case where tracts only 1 system:
+
+```{r}
+#| echo: true
+#| collapse: true
+
+pws_contam |>
+  select(
+    tract_geoid,
+    PWS_Name,
+    n_pws,
+    bg_wgt_pop,
+    ct_pop_pws_relevel,
+    population_weight
+  ) |>
+  filter(n_pws == 1) |>
+  mutate(across(where(is.numeric), ~ round(.x, 5))) |>
+  head(5)
+```
+----
+
+## Step 5 | Weight contaminants
+
+Multiply contaminant values by new population weight.
+
+**Interpreation:** Value of a contaminant reweighted to incorporate the number of people that we're actually exposed to the contaminant.
+
+$$c_{weighted} = c \times w$$
+
+### Code & Data Example
+
+Let's focus on the contaminant variable `chlrt_md`, one of many contaminants available in our data. Additionally, we'll use Veolia Water Delaware.
+
+```{r}
+
+pws_contam |>
+  select(
+    tract_geoid,
+    PWS_Name,
+    n_pws,
+    bg_wgt_pop,
+    ct_pop_pws_relevel,
+    population_weight,
+    chlrt_md
+  ) |>
+  mutate(
+    wgt_chlrt_md = chlrt_md * population_weight
+  ) |>
+  filter(str_detect(PWS_Name, 'VEOLIA')) |>
+  reactable::reactable()
+
+```
+
+----
+
+Veolia intersects with 6 tracts, and had measured contaminant value of 165,000 `chlrt_md`. When we incorporate our population weight, this number will decrease depending on how many people were served within the tract by Veolia & and any other water system. In tract **5000**, for example, relatively few people are served by Veolia, and so their exposure to chlrt is down weighted to be much lower. In tract **3800**, on the other hand, many more people are served by Veolia, and so the weighted chlrt_value is much higher.
+
+
+## Step 6 | Scaled weighted contaminants to census tract
+
+Summarize re-weighted contaminant values at the census tract level so that they can be assigned to MDAC respondents in census tracts with more than 50% public water system coverage
+
+**Interpretation:** Tract level estimate of a contaminant considering the number of people actually served by a water system
+
+$$included = \frac{ct\_pop\_pws}{tract\_pop} > 0.5$$
+
+
+```{r}
+contam_tract_level <-
+  pws_contam |>
+  select(
+    tract_geoid,
+    PWS_Name,
+    n_pws,
+    bg_wgt_pop,
+    ct_pop_pws_relevel,
+    population_weight,
+    chlrt_md
+  ) |>
+  mutate(
+    wgt_chlrt_md = chlrt_md * population_weight
+  ) |>
+  group_by(tract_geoid) |>
+  summarise(
+    sum_wgt_chlrt_md = sum(wgt_chlrt_md)
+  ) |>
+  ungroup() |>
+  left_join(ct_pop_joe, by = join_by(tract_geoid == GEOID)) |>
+  left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
+  mutate(
+    pws_coverage_proportion = round(ct_pop_pws / tract_total_pop, 3), ## How much of a tract is served by a public water system?
+    included = if_else(pws_coverage_proportion > 0.5, "yes", "no")
+  ) |>
+  slice_head(n = 10) |>
+  reactable::reactable()
+
+```
