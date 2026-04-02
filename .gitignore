@@ -7,3 +7,7 @@ amber_resources/*
 block_pws.csv
 duckdb_spatial_migration_notes.md
 air.toml
+.vscode
+quarto/de_walkthrough
+quarto/de_walkthrough_v2/data/*
+*.html
