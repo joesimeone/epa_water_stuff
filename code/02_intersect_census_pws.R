@@ -90,6 +90,22 @@ block_group_pws_v1_5070_query <-
   )
 
 
+## V3 Queries
+tract_pws_5070_v3_query <-
+  generate_itws_query(
+    tbl_name = 'tract10_pws_v3_5070',
+    lhs_geom = 'tract10_5070',
+    rhs_geom = 'epa_water_v3_5070'
+  )
+
+block_group_pws_5070_v3_query <-
+  generate_itws_query(
+    tbl_name = 'block10_group_pws_v3_5070',
+    lhs_geom = 'block10_group_5070',
+    rhs_geom = 'epa_water_v3_5070'
+  )
+
+
 # Execute Queries  -------------------------------------------------------
 
 dbExecute(con, block_group_pws_5070_query)
@@ -97,6 +113,10 @@ dbExecute(con, tract_pws_5070_query)
 
 dbExecute(con, tract_pws_5070_v1_query)
 dbExecute(con, block_group_pws_v1_5070_query)
+
+
+dbExecute(con, tract_pws_5070_v3_query)
+dbExecute(con, block_group_pws_5070_v3_query)
 
 
 dbDisconnect(con)

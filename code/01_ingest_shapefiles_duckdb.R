@@ -70,7 +70,7 @@ tract_shp <-
 ## ============================================================================
 
 ## For shape & geographic operations
-epa_water_sf <- read_sf(
+epa_water_v2_sf <- read_sf(
   here::here('data', 'geographic_data', 'epa_water', 'CWS_2_1.gdb')
   #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
 )
@@ -80,6 +80,18 @@ epa_water_v1_sf <-
     here::here('data', 'geographic_data', 'epa_water', 'epa_water_v1.gpkg')
     #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
   )
+
+
+epa_water_v3_sf <- read_sf(
+  here::here(
+    'data',
+    'geographic_data',
+    'epa_water',
+    '3_0',
+    'Service_Areas_V_3_0.gpkg'
+  )
+  #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
+)
 
 
 ## ===========================================================================
@@ -92,30 +104,39 @@ epa_water_v1_sf <-
 
 ##' Let's return the invalid geometry just so we have them somewhere
 
-invalid_entries <- which(!st_is_valid(epa_water_sf))
-st_is_valid(epa_water_sf, reason = TRUE)[invalid_entries]
+# invalid_entries <- which(!st_is_valid(epa_water_sf))
+# st_is_valid(epa_water_sf, reason = TRUE)[invalid_entries]
 
-invalid_v1_entries <- which(!st_is_valid(epa_water_v1_sf))
-st_is_valid(epa_water_v1_sf, reason = TRUE)[invalid_v1_entries]
+# invalid_v1_entries <- which(!st_is_valid(epa_water_v1_sf))
+# st_is_valid(epa_water_v1_sf, reason = TRUE)[invalid_v1_entries]
 
-invalid_boundaries <-
-  epa_water_sf[invalid_entries, ]
+# invalid_boundaries <-
+#   epa_water_sf[invalid_entries, ]
 
-invalid_v1_boundaries <-
-  epa_water_v1_sf[invalid_v1_entries, ]
+# invalid_v1_boundaries <-
+#   epa_water_v1_sf[invalid_v1_entries, ]
+
+validate_sys_boundaries <- function(dat) {
+  fixed_geom <- lwgeom::lwgeom_make_valid(st_geometry(dat))
+  st_geometry(dat) <- fixed_geom
+
+  return(dat)
+}
+
+epa_water_v1_sf <- validate_sys_boundaries(epa_water_v1_sf)
+epa_water_v2_sf <- validate_sys_boundaries(epa_water_v2_sf)
+epa_water_v3_sf <- validate_sys_boundaries(epa_water_v3_sf)
 
 
-##' Now lets fix the issue wtih {lwgeom}
-fixed_geom <- lwgeom::lwgeom_make_valid(st_geometry(epa_water_sf))
-st_geometry(epa_water_sf) <- fixed_geom
+map(
+  list(
+    epa_water_v1_sf,
+    epa_water_v2_sf,
+    epa_water_v3_sf
+  ),
+  st_crs
+)
 
-
-fixed_v1_geom <- lwgeom::lwgeom_make_valid(st_geometry(epa_water_v1_sf))
-fixed_v1_geom <- st_collection_extract(fixed_v1_geom, "POLYGON")
-st_geometry(epa_water_v1_sf) <- fixed_v1_geom
-
-st_crs(epa_water_sf)
-st_crs(epa_water_v1_sf)
 ## ====================================================================
 # Function | Ingest Water System & Census data as needed at crs 570 ----
 ## ====================================================================
@@ -171,7 +192,7 @@ ingest_geoms(
 
 
 ingest_geoms(
-  source_dat = epa_water_sf,
+  source_dat = epa_water_v2_sf,
   crs_info = 5070,
   tbl_name = 'epa_water_v2',
   type = 'pws'
@@ -190,6 +211,15 @@ ingest_geoms(
   type = 'pws'
 )
 
+
+st_geometry(epa_water_v3_sf) <- "Shape"
+
+ingest_geoms(
+  source_dat = epa_water_v3_sf,
+  crs_info = 5070,
+  tbl_name = 'epa_water_v3',
+  type = 'pws'
+)
 
 dbDisconnect(con)
 
