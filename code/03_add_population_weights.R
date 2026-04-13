@@ -73,7 +73,14 @@ raw_wgts <-
     tract_geoid = substr(GEOID, 1, 11),
     wgt = overlap_area / block10_group_5070_area,
     bg_wgt_pop = value * wgt
-  )
+  ) |>
+  group_by(GEOID) |> # within each block
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt_normalized = if_else(wgt_sum > 1, wgt / wgt_sum, wgt) # only normalize if actually over 1
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_pop = value * wgt_normalized)
 
 #' Reweighted Population Scaled to tract (Corresponds to Amber's
 #' PWS_dat %>% rename(pop_bg_pws = SUM_POP_BG_PWS))
