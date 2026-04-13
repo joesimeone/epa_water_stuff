@@ -82,9 +82,15 @@ pws_reweighted <-
   filter(PWSID %in% pwsid_w_contam) |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
-    bg_wgt_pop = value * wgt
+    wgt = overlap_area / block10_group_5070_area
   ) |>
+  group_by(GEOID) |> # within each block
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt_normalized = if_else(wgt_sum > 1, wgt / wgt_sum, wgt) # only normalize if actually over 1
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_pop = value * wgt_normalized) |>
   summarise(
     bg_wgt_pop = sum(bg_wgt_pop),
     total_unwgt_pop = sum(value),
@@ -141,20 +147,13 @@ pws_populations <-
   pws_reweighted |>
   left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
   left_join(ct_pop_joe, by = join_by('tract_geoid' == 'GEOID')) |>
-  mutate(
-    ct_pop_pws_relevel = pmin(ct_pop_pws, tract_total_pop)
-  ) |>
+  # mutate(
+  #   ct_pop_pws_relevel = pmin(ct_pop_pws, tract_total_pop)
+  # ) |>
   mutate(
     pws_ct_total_prop = round(bg_wgt_pop / tract_total_pop, 2), # Proportion of PWS to total CT
     pws_ct_pwsarea_prop = round(bg_wgt_pop / ct_pop_pws, 2) # Proportion of PWS to CT PWS area
   )
-
-## It worked...
-pws_populations |>
-  select(tract_geoid, PWSID, ct_pop_pws, tract_total_pop, ct_pop_pws_relevel) |>
-  filter(ct_pop_pws_relevel > tract_total_pop) |>
-  slice_sample(n = 20) |>
-  print(n = Inf)
 
 
 #' Let's add in our contaminants data using an inner_join()?
