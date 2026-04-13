@@ -64,7 +64,7 @@ st_geometry(epa_water_sf) <- fixed_geom
 
 ## NOTE: This takes a while... It's pulling every US tract down from census / tigris
 ## Let's us iterate over states
-state_args <- state.abb
+state_args <- c(state.abb, 'DC')
 
 # Accumulate all states into a single sf data frame
 all_tracts <- map(state_args, \(state) {
