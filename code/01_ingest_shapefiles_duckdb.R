@@ -70,17 +70,16 @@ tract_shp <-
 ## ============================================================================
 
 ## For shape & geographic operations
-epa_water_v2_sf <- read_sf(
-  here::here('data', 'geographic_data', 'epa_water', 'CWS_2_1.gdb')
-  #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
-)
+# epa_water_v2_sf <- read_sf(
+#   here::here('data', 'geographic_data', 'epa_water', 'CWS_2_1.gdb')
+#   #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
+# )
 
-epa_water_v1_sf <-
-  read_sf(
-    here::here('data', 'geographic_data', 'epa_water', 'epa_water_v1.gpkg')
-    #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
-  )
-
+# epa_water_v1_sf <-
+#   read_sf(
+#     here::here('data', 'geographic_data', 'epa_water', 'epa_water_v1.gpkg')
+#     #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
+#   )
 
 epa_water_v3_sf <- read_sf(
   here::here(
@@ -123,15 +122,15 @@ validate_sys_boundaries <- function(dat) {
   return(dat)
 }
 
-epa_water_v1_sf <- validate_sys_boundaries(epa_water_v1_sf)
-epa_water_v2_sf <- validate_sys_boundaries(epa_water_v2_sf)
+# epa_water_v1_sf <- validate_sys_boundaries(epa_water_v1_sf)
+# epa_water_v2_sf <- validate_sys_boundaries(epa_water_v2_sf)
 epa_water_v3_sf <- validate_sys_boundaries(epa_water_v3_sf)
 
 
 map(
   list(
-    epa_water_v1_sf,
-    epa_water_v2_sf,
+    # epa_water_v1_sf,
+    # epa_water_v2_sf,
     epa_water_v3_sf
   ),
   st_crs
@@ -191,26 +190,24 @@ ingest_geoms(
 )
 
 
-ingest_geoms(
-  source_dat = epa_water_v2_sf,
-  crs_info = 5070,
-  tbl_name = 'epa_water_v2',
-  type = 'pws'
-)
+# ingest_geoms(
+#   source_dat = epa_water_v2_sf,
+#   crs_info = 5070,
+#   tbl_name = 'epa_water_v2',
+#   type = 'pws'
+# )
 
-epa_water_v1_sf_renamed <- epa_water_v1_sf |>
-  rename(Primacy_Agency = Primacy_Ag)
+# epa_water_v1_sf_renamed <- epa_water_v1_sf |>
+#   rename(Primacy_Agency = Primacy_Ag)
 
-st_geometry(epa_water_v1_sf_renamed) <- "Shape"
+# st_geometry(epa_water_v1_sf_renamed) <- "Shape"
 
-
-ingest_geoms(
-  source_dat = epa_water_v1_sf_renamed,
-  crs_info = 5070,
-  tbl_name = 'epa_water_v1',
-  type = 'pws'
-)
-
+# ingest_geoms(
+#   source_dat = epa_water_v1_sf_renamed,
+#   crs_info = 5070,
+#   tbl_name = 'epa_water_v1',
+#   type = 'pws'
+# )
 
 st_geometry(epa_water_v3_sf) <- "Shape"
 
