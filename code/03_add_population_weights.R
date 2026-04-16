@@ -85,7 +85,7 @@ raw_wgts <-
 #' Reweighted Population Scaled to tract (Corresponds to Amber's
 #' PWS_dat %>% rename(pop_bg_pws = SUM_POP_BG_PWS))
 pws_reweighted <-
-  tbl(con, 'block10_group_pws_5070') |>
+  tbl(con, 'block10_group_pws_v3_5070') |>
   filter(PWSID %in% pwsid_w_contam) |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
@@ -104,13 +104,13 @@ pws_reweighted <-
     .by = c(tract_geoid, PWSID)
   ) |>
   left_join(
-    tbl(con, 'tract10_pws_5070') |>
+    tbl(con, 'tract10_pws_v3_5070') |>
       select(
         GEOID,
         PWSID,
         PWS_Name,
         tract10_5070_area,
-        epa_water_v2_5070_area,
+        epa_water_v3_5070_area,
         overlap_area
       ),
     by = c('tract_geoid' = 'GEOID', 'PWSID')
@@ -180,10 +180,10 @@ pws_contam <-
     pws_dat_v1,
     by = join_by(PWSID == pwsid, tract_geoid == geo_tweak)
   ) |>
-  distinct(tract_geoid, PWSID, .keep_all = TRUE) |> ## Why are there duplicates?
+  distinct(tract_geoid, PWSID, .keep_all = TRUE) |>
   mutate(
     wgt_flag = if_else(n_pws > 1, 1, 0), # Will help us determine whether we need to weight contaminants estimates or not
-    population_weight = bg_wgt_pop / ct_pop_pws_relevel # Population in each tract water system / total population served by each water system
+    population_weight = bg_wgt_pop / ct_pop_pws # Population in each tract water system / total population served by each water system
   ) |>
   group_by(tract_geoid, wgt_flag) |>
   mutate(
