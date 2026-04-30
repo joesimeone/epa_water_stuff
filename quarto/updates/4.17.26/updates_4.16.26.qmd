@@ -1,0 +1,450 @@
+---
+title: 'Miscallaneous Updates to EPA Water System Weighting'
+author: Joe Simeone
+date: 4.16.26
+format:
+    html:
+        echo: true
+        code-fold: true
+        mainfont: 'inter'
+        table-of-contents: true
+        number-sections: true
+        number-depth: 2
+        embed-resources: true
+---
+
+
+
+
+```{r}
+#| include: false
+library(duckdb)
+library(tidyverse)
+
+# Load pre-processed Delaware spatial data (from de_data_prep.R) ---------
+epa_water_de <- readRDS(
+  "C:/git/epa_water_stuff/quarto/de_walkthrough_v2/data/epa_water_de.rds"
+)
+block10_group_de <- readRDS(
+  "C:/git/epa_water_stuff/quarto/de_walkthrough_v2/data/block10_group_de.rds"
+)
+tract10_pws_de <- readRDS(
+  "C:/git/epa_water_stuff/quarto/de_walkthrough_v2/data/tract10_pws_de.rds"
+)
+block10_group_pws_de <- readRDS(
+  "C:/git/epa_water_stuff/quarto/de_walkthrough_v2/data/block10_group_pws_de.rds"
+)
+tract10_de <- readRDS(
+  "C:/git/epa_water_stuff/quarto/de_walkthrough_v2/data/tract10_de.rds"
+)
+
+reweighted_base_dat <-
+  read_csv(here::here(
+    'data',
+    'checks',
+    'pop_comparisons_w_normalized_wgts.csv'
+  ))
+
+
+con <- dbConnect(
+  duckdb(),
+  'C:/git/epa_water_stuff/data/tract_water_system_db.duckdb',
+  read_only = TRUE
+)
+
+
+PWS_dat <- read.csv(
+  "C:/Users/js5466/OneDrive - Drexel University/Palmer,Amber's files - Preliminary_data_PWScontam/PWS_JOINED_BG_POP.csv"
+)
+
+pws_dat_v1 <-
+  PWS_dat |>
+  select(CT_GEOID, pwsid, starts_with(c('pf', 'chr', 'chl', 'mlyb'))) |>
+  mutate(
+    CT_GEOID = as.character(CT_GEOID),
+    geo_tweak = stringr::str_pad(
+      CT_GEOID,
+      width = 11,
+      side = "left",
+      pad = "0"
+    )
+  )
+```
+
+# Updates 
+
+1. Added DC to workflow to fix tiny error in coe
+2. Added Hawaii & Alaska to weighting workflow. This required reprojecting these boundaries separately so that areal weights and overlapping geometries aren't distorted. I decided on projections using a [resource I found on the EPA's website](https://www.epa.gov/waterdata/spatial-data-waters)
+     - **Alaska:** Projected to 3338
+     - **Hawaii:** Projected to 6628
+3. Spent time looking into normalized areal weights. This was the bulk of time and what I'll spend the most time on today.
+
+# Normalized Areal Spatial Weights
+
+## Version 1 Way
+
+In the original code, we spatially re-weighted block group populations using this formula:
+
+$$
+w_{ij} = \frac{\text{overlap\_area}_{ij}}{\text{block\_area}_{i}}
+$$
+
+Roughly, this corresponds to the number of people within a block served by an overlapping water system. We implemented the formula like this: 
+
+```{r}
+tbl(con, 'block10_group_pws_v3_5070') |>
+  filter(st_fips == '10') |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  collect() |>
+  arrange(tract_geoid, GEOID) |>
+  slice_head(n = 10) |>
+  select(
+    tract_geoid,
+    block_geoid = GEOID,
+    PWSID,
+    pop_estimate = value,
+    bg_wgt_pop,
+    block10_group_5070_area,
+    epa_water_v3_5070_area,
+    overlap_area,
+    wgt
+  ) |>
+  reactable::reactable()
+```
+
+In block 10001, there were an estimated 2,637 people. This block intersected solely with PWSID DE00A0673. Because the overlap area was small relative to the total block group area, this estimate got pulled way down to 91.5.
+
+Once we've reweighted the population, we aggregate to tract and calculate two quantities.
+
+1. The estimated number of people served by a specific water system * tract combination.
+2. The total population served by any water system within each tract. 
+
+
+```{r}
+#| collapse: true
+## Useful later
+ct_pop_joe <-
+  tbl(con, 'tract10_5070') |>
+  select(GEOID, tract_total_pop = value) |>
+  collect() |>
+  as_tibble() |>
+  arrange(GEOID)
+
+
+## Water system * tract combo
+pws_reweighted <-
+  tbl(con, 'block10_group_pws_v3_5070') |>
+
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  summarise(
+    bg_wgt_pop = sum(bg_wgt_pop),
+    total_unwgt_pop = sum(value),
+    .by = c(tract_geoid, PWSID)
+  ) |>
+  left_join(
+    tbl(con, 'tract10_pws_v3_5070') |>
+      select(
+        GEOID,
+        PWSID,
+        PWS_Name,
+        tract10_5070_area,
+        epa_water_v3_5070_area,
+        overlap_area
+      ),
+    by = c('tract_geoid' = 'GEOID', 'PWSID')
+  ) |>
+  filter(
+    bg_wgt_pop != 0 ## Don't need tracts with no population. Extraneous to the analysis
+  ) |>
+  collect()
+
+head(pws_reweighted)
+
+
+pws_tract_pop <-
+  pws_reweighted |>
+  summarise(
+    n_pws = n(),
+    ct_pop_pws = sum(bg_wgt_pop),
+    .by = c(tract_geoid)
+  )
+
+head(pws_tract_pop)
+```
+
+
+
+This all looks alright! But there's an issue....
+
+### The Trouble 
+
+Because single block groups can straddle multiple intersecting water systems, sometimes when we roll up tract level estimates, our re-weighted population estimates will exceed actual tract population estimates. We can see this any place where the block level sum of the `wgt` variable exceeds 1.
+
+```{r}
+tbl(con, 'block10_group_pws_v3_5070') |>
+  filter(st_fips == '10') |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  group_by(GEOID) |>
+  mutate(wgt_sum = sum(wgt)) |>
+  ungroup() |>
+  collect() |>
+  filter(wgt_sum > 1) |>
+  arrange(tract_geoid, GEOID) |>
+  select(
+    tract_geoid,
+    block_geoid = GEOID,
+    PWSID,
+    pop_estimate = value,
+    bg_wgt_pop,
+    wgt,
+    wgt_sum
+  ) |>
+  arrange(desc(wgt_sum)) |>
+  slice_head(n = 6)
+```
+
+If you look at block **5023**, you'll see that roughly 72.2% of its land area intersects with PWS DE0000564 and roughly 88.5% of its land area intersects with PWS DE0000663. More,our weighted estimates for the block group now exceed the initial population estimate.
+
+In other words, the **reweighted population estimates are distorted**. This block group only had an estimated 796 people. After our estimates, it now looks like it has 1,280. In the most worst cases this can push our tract population served estimates over the true number of people estimated to be in the tract:
+
+```{r}
+pws_reweighted |>
+  left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
+  left_join(ct_pop_joe, by = join_by('tract_geoid' == 'GEOID')) |>
+  filter(ct_pop_pws > tract_total_pop) |>
+  mutate(diff = abs(ct_pop_pws - tract_total_pop)) |> ## Decluttering floating point discrepancies
+  filter(diff > 2) |>
+  slice_head(n = 10) |>
+  select(tract_geoid, PWSID, bg_wgt_pop, ct_pop_pws, tract_total_pop, diff)
+```
+
+We estimate that **1842** people in tract **42001** are served by **MN1620026**, and a total of **2,129** people are served by any water system in the tract. That's... **202** too many people. 
+
+### Old Fix
+
+In the first pass, we simply capped the tract total served by any water system (`ct_pop_pws`) variable so that it never exceed the actual tract estimate. 
+
+
+```{r}
+pws_reweighted |>
+  left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
+  left_join(ct_pop_joe, by = join_by('tract_geoid' == 'GEOID')) |>
+  mutate(ct_pop_pws_relevel = pmin(ct_pop_pws, tract_total_pop)) |>
+  select(
+    tract_geoid,
+    PWSID,
+    bg_wgt_pop,
+    ct_pop_pws,
+    tract_total_pop,
+    ct_pop_pws_relevel
+  ) |>
+  mutate(diff = ct_pop_pws - tract_total_pop) |> ## Decluttering floating point discrepancies
+  filter(diff > 20) |>
+  slice_head(n = 10)
+```
+
+We estimated that **2,129** people in the tract **2001** were served by a water system. Because that exceeded the tract level estimate, we hard coded it to **1,927**. 
+
+While this approach anchors our estimates to something real, two problems still persist:
+
+1. Individual tract * water system units remain distorted.
+2. Sometimes single blocks will intersect with multiple water systems, but the population estimates won't be pushed high enough to trigger the `pmin` relevel. This means that we're treating these units differently.
+
+
+## Version 2 Way
+
+Rather than capping the population estimates at the tract level once we've finished all of the summaries, we can normalize the areal weights and carry the normalized weight throughout our workflow.
+
+$$
+w_{ij}^* = \begin{cases} 
+\dfrac{w_{ij}}{\sum_{j} w_{ij}} & \text{if } \sum_{j} w_{ij} > 1 \\[10pt]
+w_{ij} & \text{otherwise}
+\end{cases}
+$$
+
+Here, where the sum of our initial weights exceed 1 (meaning water system coverage areas overlap within the block), we use the sum of the weight as the denominator. 
+
+In effect, this is like spreading the finite block population proportionally over the total land area of the intersecting water systems.
+
+
+Let's look at how this changes our earlier example from the earlier section:
+
+
+
+```{r}
+tbl(con, 'block10_group_pws_v3_5070') |>
+  filter(st_fips == '10') |>
+  mutate(
+    tract_geoid = substr(GEOID, 1, 11),
+    wgt = overlap_area / block10_group_5070_area,
+    bg_wgt_pop = value * wgt
+  ) |>
+  group_by(GEOID) |>
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt_normalized = if_else(wgt_sum > 1, wgt / wgt_sum, wgt) # only normalize if actually over 1
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_norm_pop = value * wgt_normalized) |>
+  ungroup() |>
+  collect() |>
+  filter(wgt_sum > 1) |>
+  arrange(tract_geoid, GEOID) |>
+  select(
+    tract_geoid,
+    block_geoid = GEOID,
+    PWSID,
+    pop_estimate = value,
+    bg_wgt_pop,
+    bg_wgt_norm_pop,
+    wgt,
+    wgt_normalized,
+    wgt_sum
+  ) |>
+  arrange(desc(wgt_sum)) |>
+  slice_head(n = 6) |>
+  mutate(across(where(is.numeric), ~ round(., 4))) |>
+  reactable::reactable()
+```
+
+There are an estimated **796** people in block **5023**, which interesects with water systems **DE0000564** and **DE0000663**. Originally, we estimated that the water system served over **574** people and the latter served **704** people, a much higher value than the original 796. Once we normalize the weight, these numbers shift to 357 and 438 respectively. This is based on the amount of overlap each water system has with the block. If we sum the 2 values, they no longer exceed the initial population estimate: `r 357.6072 + 438.3928`.
+
+::: {.callout-note}
+Note that this is also how we deal with the final weights (tract population served by specific water system / tract population served by any water system) used to re-weight contaminant values associated with each tract. 
+:::
+
+### Validating Version 2 Approach
+
+We can verify whether this worked as expected:
+
+
+```{r}
+pws_norm_check <-
+  reweighted_base_dat |>
+  select(tract_geoid, PWSID, ct_pop_pws, tract_total_pop) |>
+  filter(ct_pop_pws > tract_total_pop) |>
+  mutate(diff = ct_pop_pws - tract_total_pop) |>
+  arrange(diff) # smallest diffs first — these are your FP noise
+
+# quick summary
+pws_norm_check |>
+  summarise(
+    n_total = n(),
+    n_fp_noise = sum(diff < 1e-6), # essentially zero
+    n_real_excess = sum(diff >= 1e-6),
+    max_diff = max(diff),
+    median_diff = median(diff)
+  )
+```
+
+Once we normalize the weight, we only have a handful of tracts that meaningfully exceed the actual tract population estimate. 
+
+::: {.callout-tip}
+## What's going on with n_fp_noise?
+
+This is an issue with floating point estimations working between R and `duckdb`. Both systems produce slightly different estimates out to non-meaningful decimals. It shouldn't impact our results, so I'm not worried about the clutter. 
+
+:::
+
+
+# Duplicate Water System IDs
+
+What's up with the real excess column? Let's take a look.
+
+```{r}
+# Real discrepancies worth investigating
+pws_norm_check |>
+  filter(diff > 1e-6) |>
+  arrange(desc(diff))
+```
+
+
+Yikes. 
+
+The reason for this is that there are a handful of duplicate water system IDs: 
+
+
+```{r}
+problem_sys <-
+  tbl(con, 'epa_water_v3_5070') |>
+  filter(Primacy_Agency %in% c('IA', 'FL', 'MT', 'VA')) |>
+  collect() |>
+  janitor::get_dupes(PWSID)
+
+problem_sys |> head(5)
+
+ia_demo <-
+  tbl(con, 'epa_water_v3_5070') |>
+  filter(Primacy_Agency == 'IA') |>
+  collect() |>
+  janitor::get_dupes(PWSID) |>
+  mutate(
+    geometry = sf::st_as_sfc(
+      structure(geom_wkb, class = "WKB"),
+      crs = 5070
+    )
+  ) |>
+  sf::st_as_sf()
+
+
+mapgl::maplibre_view(ia_demo)
+```
+
+When we aggregate to anyone served by a water system, the populations are doubled counted per geometry, and will push the estimate up too high. 
+
+```{r}
+pws_reweighted |> filter(PWSID == 'FL6580531') |> arrange(tract_geoid)
+```
+
+## The Fix
+
+So long as the boundaries all touch, I need to hit them with `st_union()` and I think that will resolve the issue. We'll have single geometries associated with each id, and so the populations won't be getting double counted.
+
+
+# Questions
+
+What to do about territories / tribal areas? 
+```{r}
+us_tribal_areas <-
+  tbl(con, 'epa_water_v3_5070') |>
+  filter(str_detect(Primacy_Agency, '[0-9]')) |>
+  select(PWSID, PWS_Name) |>
+  collect()
+
+head(us_tribal_areas)
+```
+
+I've included them in the intersections for the moment
+
+Roughly 18% of water systems have contaminants (PFAS) info avaialble. Is this what we expect?
+
+```{r}
+#' Seems like only a small proportion of tracts have
+#' contaminants information available. I think this has to do with ucmr
+#' reporting requirements (??) https://www.epa.gov/dwucmr/third-unregulated-contaminant-monitoring-rule
+
+water_sys <-
+  tbl(con, 'epa_water_v3_5070') |>
+  summarise(n = n()) |>
+  collect() |>
+  pull(n)
+
+
+tbl(con, 'epa_water_v3_5070') |>
+  filter(PWSID %in% pws_dat_v1$pwsid) |>
+  summarise(water_sys_w_contam = n_distinct(PWSID)) |>
+  collect() |>
+  mutate(prop_water_sys_w_contam = water_sys_w_contam / water_sys)
+```

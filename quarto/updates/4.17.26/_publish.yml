@@ -1,0 +1,4 @@
+- source: updates_4.16.26.qmd
+  posit-connect-cloud:
+    - id: 019d96ed-03cd-c1c6-8f1c-887422b03ecb
+      url: https://connect.posit.cloud/joesimeone/content/019d96ed-03cd-c1c6-8f1c-887422b03ecb
