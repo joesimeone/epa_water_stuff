@@ -73,31 +73,44 @@ raw_wgts <-
     tract_geoid = substr(GEOID, 1, 11),
     wgt = overlap_area / block10_group_5070_area,
     bg_wgt_pop = value * wgt
-  )
+  ) |>
+  group_by(GEOID) |> # within each block
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt_normalized = if_else(wgt_sum > 1, wgt / wgt_sum, wgt) # only normalize if actually over 1
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_pop = value * wgt_normalized)
 
 #' Reweighted Population Scaled to tract (Corresponds to Amber's
 #' PWS_dat %>% rename(pop_bg_pws = SUM_POP_BG_PWS))
 pws_reweighted <-
-  tbl(con, 'block10_group_pws_5070') |>
+  tbl(con, 'block10_group_pws_v3_5070') |>
   filter(PWSID %in% pwsid_w_contam) |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
-    bg_wgt_pop = value * wgt
+    wgt = overlap_area / block10_group_5070_area
   ) |>
+  group_by(GEOID) |> # within each block
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt_normalized = if_else(wgt_sum > 1, wgt / wgt_sum, wgt) # only normalize if actually over 1
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_pop = value * wgt_normalized) |>
   summarise(
     bg_wgt_pop = sum(bg_wgt_pop),
     total_unwgt_pop = sum(value),
     .by = c(tract_geoid, PWSID)
   ) |>
   left_join(
-    tbl(con, 'tract10_pws_5070') |>
+    tbl(con, 'tract10_pws_v3_5070') |>
       select(
         GEOID,
         PWSID,
         PWS_Name,
         tract10_5070_area,
-        epa_water_v2_5070_area,
+        epa_water_v3_5070_area,
         overlap_area
       ),
     by = c('tract_geoid' = 'GEOID', 'PWSID')
@@ -141,20 +154,13 @@ pws_populations <-
   pws_reweighted |>
   left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
   left_join(ct_pop_joe, by = join_by('tract_geoid' == 'GEOID')) |>
-  mutate(
-    ct_pop_pws_relevel = pmin(ct_pop_pws, tract_total_pop)
-  ) |>
+  # mutate(
+  #   ct_pop_pws_relevel = pmin(ct_pop_pws, tract_total_pop)
+  # ) |>
   mutate(
     pws_ct_total_prop = round(bg_wgt_pop / tract_total_pop, 2), # Proportion of PWS to total CT
     pws_ct_pwsarea_prop = round(bg_wgt_pop / ct_pop_pws, 2) # Proportion of PWS to CT PWS area
   )
-
-## It worked...
-pws_populations |>
-  select(tract_geoid, PWSID, ct_pop_pws, tract_total_pop, ct_pop_pws_relevel) |>
-  filter(ct_pop_pws_relevel > tract_total_pop) |>
-  slice_sample(n = 20) |>
-  print(n = Inf)
 
 
 #' Let's add in our contaminants data using an inner_join()?
@@ -174,10 +180,10 @@ pws_contam <-
     pws_dat_v1,
     by = join_by(PWSID == pwsid, tract_geoid == geo_tweak)
   ) |>
-  distinct(tract_geoid, PWSID, .keep_all = TRUE) |> ## Why are there duplicates?
+  distinct(tract_geoid, PWSID, .keep_all = TRUE) |>
   mutate(
     wgt_flag = if_else(n_pws > 1, 1, 0), # Will help us determine whether we need to weight contaminants estimates or not
-    population_weight = bg_wgt_pop / ct_pop_pws_relevel # Population in each tract water system / total population served by each water system
+    population_weight = bg_wgt_pop / ct_pop_pws # Population in each tract water system / total population served by each water system
   ) |>
   group_by(tract_geoid, wgt_flag) |>
   mutate(
