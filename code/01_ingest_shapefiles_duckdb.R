@@ -127,6 +127,36 @@ validate_sys_boundaries <- function(dat) {
 epa_water_v3_sf <- validate_sys_boundaries(epa_water_v3_sf)
 
 
+#' We have a handful of duplicate PWSIDs in Iowa, Florida,
+#' and Virgina. These rerpesent the same systems, and, as
+#' far as I can tell, broken geometries. We can fix
+#' with st_union in this kinda hacky way:
+
+# Get problem Geometries
+epa_dupe_pwsids <-
+  epa_water_v3_sf |>
+  janitor::get_dupes(PWSID)
+
+# Remove from sf
+epa_water_v3_sf <-
+  epa_water_v3_sf |>
+  filter(!PWSID %in% epa_dupe_pwsids$PWSID)
+
+epa_dupe_pwsids <-
+  epa_dupe_pwsids |>
+  group_by(PWSID) |>
+  mutate(geom = st_union(geom)) |>
+  ungroup() |>
+  select(-dupe_count)
+
+epa_water_v3_sf <-
+  rbind(
+    epa_water_v3_sf,
+    epa_dupe_pwsids
+  ) |>
+  st_as_sf()
+
+
 map(
   list(
     # epa_water_v1_sf,
