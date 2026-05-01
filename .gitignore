@@ -13,3 +13,28 @@ quarto/de_walkthrough_v2/data/*
 *.html
 code/scribbles/map_scribbles.R
 code/scribbles/misc_out_of_wflow_problems.R
+documentation/~$ter_contaminant_weighting_protocol.docx
+documentation/DeRoos_R21_UCMR-MDAC_FINAL.pdf
+documentation/Method for creating dataset.docx
+documentation/water_contaminant_weighting_protocol.docx
+documentation/amber/Folder Description.docx
+documentation/amber/merge_data_analysis_code.R
+documentation/amber/Method for creating dataset.docx
+documentation/amber/population_weighting.R
+documentation/epa_water/Added_Systems_V_2_1.csv
+documentation/epa_water/Crosswalk.png
+documentation/epa_water/Documentation.pdf
+documentation/epa_water/Missing_Systems_V_2_1.csv
+documentation/epa_water/New_System_Sourced_V_2_1.csv
+documentation/epa_water/README.md
+documentation/epa_water/Removed_Systems_V_2_1.csv
+documentation/epa_water/review_6_year/epa 6 year review.pdf
+documentation/epa_water/review_6_year/user_guide_to_obtaining_and_using_syr3_data.pdf
+documentation/epa_water/systems/Added_Systems_V_2_1.csv
+documentation/epa_water/systems/Crosswalk.png
+documentation/epa_water/systems/Documentation.pdf
+documentation/epa_water/systems/Missing_Systems_V_2_1.csv
+documentation/epa_water/systems/New_System_Sourced_V_2_1.csv
+documentation/epa_water/systems/README.md
+documentation/epa_water/systems/Removed_Systems_V_2_1.csv
+documentation/epa_water/ucmr_data/ucmr3-data-summary.pdf
