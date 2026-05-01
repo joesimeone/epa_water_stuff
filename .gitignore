@@ -11,3 +11,5 @@ air.toml
 quarto/de_walkthrough
 quarto/de_walkthrough_v2/data/*
 *.html
+code/scribbles/map_scribbles.R
+code/scribbles/misc_out_of_wflow_problems.R
