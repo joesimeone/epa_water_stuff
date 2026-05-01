@@ -39,7 +39,7 @@ block_files <- list.files(
   "C:/Users/js5466/OneDrive - Drexel University/Palmer,Amber's files - Preliminary_data_PWScontam/census_blocks_2010",
   full.names = TRUE
 ) |>
-  grep("ak_|hi_", x = _, value = TRUE)
+  grep("ak_|hi_|pr_|gu_", x = _, value = TRUE, invert = TRUE)
 
 ## Narrow to shape files
 block_files <-
@@ -48,9 +48,7 @@ block_files <-
 
 bg_shapefile <- st_read(
   "C:/Users/js5466/OneDrive - Drexel University/Palmer,Amber's files - Preliminary_data_PWScontam/merged_blockgroups.shp"
-) |>
-  mutate(st_fips = substr(GEOID, 1, 2)) |>
-  filter(st_fips %in% c('02', '15'))
+)
 
 
 ## ============================================================================
@@ -60,13 +58,12 @@ tract_shp <-
   sfarrow::st_read_parquet(
     here::here(
       'data',
-      'geographic_data',
+      'source_data',
+      'census_boundaries',
       'tracts',
       'tract10_national.parquet'
     )
-  ) |>
-  mutate(st_fips = substr(GEOID, 1, 2)) |>
-  filter(st_fips %in% c('02', '15'))
+  )
 
 
 ## ============================================================================
@@ -74,31 +71,28 @@ tract_shp <-
 ## ============================================================================
 
 ## For shape & geographic operations
-epa_water_v2_sf <- read_sf(
-  here::here('data', 'geographic_data', 'epa_water', 'CWS_2_1.gdb')
-  #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
-) |>
-  filter(Primacy_Agency %in% c('AK', 'HI'))
+# epa_water_v2_sf <- read_sf(
+#   here::here('data', 'geographic_data', 'epa_water', 'CWS_2_1.gdb')
+#   #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
+# )
 
-epa_water_v1_sf <-
-  read_sf(
-    here::here('data', 'geographic_data', 'epa_water', 'epa_water_v1.gpkg')
-    #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
-  ) |>
-  filter(Primacy_Ag %in% c('Alaska', 'Hawaii'))
-
+# epa_water_v1_sf <-
+#   read_sf(
+#     here::here('data', 'geographic_data', 'epa_water', 'epa_water_v1.gpkg')
+#     #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
+#   )
 
 epa_water_v3_sf <- read_sf(
   here::here(
     'data',
-    'geographic_data',
+    'source_data',
     'epa_water',
+    'epa_water_bounds',
     '3_0',
     'Service_Areas_V_3_0.gpkg'
   )
   #options = c("OGR_ORGANIZE_POLYGONS=SKIP")
-) |>
-  filter(Primacy_Agency %in% c('AK', 'HI'))
+)
 
 
 ## ===========================================================================
@@ -130,15 +124,45 @@ validate_sys_boundaries <- function(dat) {
   return(dat)
 }
 
-epa_water_v1_sf <- validate_sys_boundaries(epa_water_v1_sf)
-epa_water_v2_sf <- validate_sys_boundaries(epa_water_v2_sf)
+# epa_water_v1_sf <- validate_sys_boundaries(epa_water_v1_sf)
+# epa_water_v2_sf <- validate_sys_boundaries(epa_water_v2_sf)
 epa_water_v3_sf <- validate_sys_boundaries(epa_water_v3_sf)
+
+
+#' We have a handful of duplicate PWSIDs in Iowa, Florida,
+#' and Virgina. These rerpesent the same systems, and, as
+#' far as I can tell, broken geometries. We can fix
+#' with st_union in this kinda hacky way:
+
+# Get problem Geometries
+epa_dupe_pwsids <-
+  epa_water_v3_sf |>
+  janitor::get_dupes(PWSID)
+
+# Remove from sf
+epa_water_v3_sf <-
+  epa_water_v3_sf |>
+  filter(!PWSID %in% epa_dupe_pwsids$PWSID)
+
+epa_dupe_pwsids <-
+  epa_dupe_pwsids |>
+  group_by(PWSID) |>
+  mutate(geom = st_union(geom)) |>
+  ungroup() |>
+  select(-dupe_count)
+
+epa_water_v3_sf <-
+  rbind(
+    epa_water_v3_sf,
+    epa_dupe_pwsids
+  ) |>
+  st_as_sf()
 
 
 map(
   list(
-    epa_water_v1_sf,
-    epa_water_v2_sf,
+    # epa_water_v1_sf,
+    # epa_water_v2_sf,
     epa_water_v3_sf
   ),
   st_crs
@@ -151,19 +175,12 @@ map(
 #' 1. Write 5070 table to R
 #' 2. Alter the table to make the duckdb understand the geometry
 #' 3. Remove redundant geometry table
-ingest_geoms <- function(
-  source_dat,
-  tbl_name,
-  fips_code,
-  fips_abbr,
-  crs_info,
-  type = 'census'
-) {
+ingest_geoms <- function(source_dat, tbl_name, crs_info, type = 'census') {
   if (type == 'census') {
     contig_dat <-
       source_dat |>
       mutate(st_fips = substr(GEOID, 0, 2)) |>
-      filter(st_fips == {{ fips_code }}) |>
+      filter(!st_fips %in% c('02', '15', '66', '72')) |>
       st_transform(crs_info) |>
       st_zm(drop = TRUE) |>
       mutate(geom_wkb = st_as_binary(geometry, hex = TRUE)) |>
@@ -171,8 +188,8 @@ ingest_geoms <- function(
   } else {
     contig_dat <-
       source_dat |>
+      filter(!Primacy_Agency %in% c('AK', 'HI', 'GU', 'PR')) |>
       st_transform(crs_info) |>
-      filter(Primacy_Agency == {{ fips_abbr }}) |>
       st_zm(drop = TRUE) |>
       mutate(geom_wkb = st_as_binary(Shape, hex = TRUE)) |>
       st_drop_geometry()
@@ -191,56 +208,45 @@ ingest_geoms <- function(
 
 dbListTables(con)
 
-## Alaska Calls | What I thin that we should be using
+## 5070 Calls | What I thin that we should be using
 ingest_geoms(
   source_dat = bg_shapefile,
-  crs_info = 3338,
-  fips_code = '02',
-  tbl_name = 'ak_block10_group'
+  crs_info = 5070,
+  tbl_name = 'block10_group'
 )
 
 ingest_geoms(
   source_dat = tract_shp,
-  crs_info = 3338,
-  fips_code = '02',
-  tbl_name = 'ak_tract10'
+  crs_info = 5070,
+  tbl_name = 'tract10'
 )
 
+
+# ingest_geoms(
+#   source_dat = epa_water_v2_sf,
+#   crs_info = 5070,
+#   tbl_name = 'epa_water_v2',
+#   type = 'pws'
+# )
+
+# epa_water_v1_sf_renamed <- epa_water_v1_sf |>
+#   rename(Primacy_Agency = Primacy_Ag)
+
+# st_geometry(epa_water_v1_sf_renamed) <- "Shape"
+
+# ingest_geoms(
+#   source_dat = epa_water_v1_sf_renamed,
+#   crs_info = 5070,
+#   tbl_name = 'epa_water_v1',
+#   type = 'pws'
+# )
 
 st_geometry(epa_water_v3_sf) <- "Shape"
 
 ingest_geoms(
   source_dat = epa_water_v3_sf,
-  crs_info = 3338,
-  fips_abbr = 'AK',
-  tbl_name = 'ak_epa_water_v3',
-  type = 'pws'
-)
-
-
-## Hawaii Calls
-ingest_geoms(
-  source_dat = bg_shapefile,
-  crs_info = 6628,
-  fips_code = '15',
-  tbl_name = 'hi_block10_group'
-)
-
-ingest_geoms(
-  source_dat = tract_shp,
-  crs_info = 6628,
-  fips_code = '15',
-  tbl_name = 'hi_tract10'
-)
-
-
-st_geometry(epa_water_v3_sf) <- "Shape"
-
-ingest_geoms(
-  source_dat = epa_water_v3_sf,
-  crs_info = 6628,
-  fips_abbr = 'HI',
-  tbl_name = 'hi_epa_water_v3',
+  crs_info = 5070,
+  tbl_name = 'epa_water_v3',
   type = 'pws'
 )
 

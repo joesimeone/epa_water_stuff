@@ -18,46 +18,6 @@ library(geoarrow)
 library(sfarrow)
 
 
-## =========================================================================
-# Imports -----
-## =========================================================================
-
-## For shape & geographic operations
-epa_water_sf <- read_sf(
-  here::here('data', 'geographic_data', 'epa_water', 'CWS_2_1.gdb'),
-  options = c("OGR_ORGANIZE_POLYGONS=SKIP")
-)
-
-## For exploring variables name and stuff....
-epa_water_df <-
-  epa_water_sf |>
-  st_drop_geometry() |>
-  as_tibble() |>
-  janitor::clean_names()
-
-
-## ===========================================================================
-# First Battle | Weird import error about bad geometries  -----
-## ===========================================================================
-
-##' On import, we get a set of warnings relating to some invalid Geometries
-##' Found a work around, but need to better understand what it's doing and any
-##' any downstream consequences
-
-##' Let's return the invalid geometry just so we have them somewhere
-
-invalid_entries <- which(!st_is_valid(epa_water_sf))
-st_is_valid(epa_water_sf, reason = TRUE)[invalid_entries]
-
-invalid_boundaries <-
-  epa_water_sf[invalid_entries, ]
-
-
-##' Now lets fix the issue wtih {lwgeom}
-fixed_geom <- lwgeom::lwgeom_make_valid(st_geometry(epa_water_sf))
-st_geometry(epa_water_sf) <- fixed_geom
-
-
 ## ===========================================================================
 # Second Battle | Build US Tract - Population Parquet Files  ----
 ## ===========================================================================
@@ -89,20 +49,11 @@ all_tracts <-
 ## =============================================================================
 
 st_write_parquet(
-  epa_water_sf,
-  here::here(
-    'data',
-    'geographic_data',
-    'epa_water_boundaries_v2_fixed.parquet'
-  )
-)
-
-
-st_write_parquet(
   all_tracts,
   here::here(
     'data',
-    'geographic_data',
+    'source_data',
+    'tracts',
     'tract10_national.parquet'
   )
 )
