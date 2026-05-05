@@ -1,0 +1,282 @@
+---
+title: "Code & Data Resources"
+format:
+  html:
+    echo: false
+    mainfont: 'inter'
+    table-of-contents: true
+    number-sections: true
+    number-depth: 2
+    embed-resources: true
+---
+
+```{r}
+#| label: 'pre-reqs'
+#| include: false
+library(duckdb)
+library(dplyr)
+library(reactable)
+library(htmltools)
+```
+
+## Script Workflow — `code/weight_contam_flow/`
+
+The scripts in this folder implement a geospatial pipeline that estimates contamination
+exposure for US census tracts by combining EPA public water system (PWS) service area
+boundaries with census population data and contaminant measurements.
+
+### Pipeline Diagram
+
+```{mermaid}
+flowchart TD
+    A["<b>Census Decennial API</b><br/>(2010)"]
+    B["<b>00_convert_to_geoparquet.R</b><br/>Download tract geometries &amp;<br/>population; convert to Parquet"]
+    C["tract10_national.parquet"]
+
+    D["<b>Local Source Files</b><br/>Block group SHPs<br/>EPA Service_Areas_V_3_0.gpkg"]
+
+    E["<b>01_ingest_shapefiles_duckdb.R</b><br/>Contiguous US → EPSG:5070"]
+    F["<b>01_ingest_AK_HI_duckdb.R</b><br/>Alaska → EPSG:3338<br/>Hawaii → EPSG:6628"]
+
+    G["<b>DuckDB</b><br/>tract, block group &amp;<br/>EPA boundary tables"]
+
+    H["<b>02_intersect_census_pws.R</b><br/>Spatial intersection of census units<br/>&amp; water system boundaries;<br/>calculates overlap areas"]
+
+    I["<b>DuckDB</b><br/>Intersection tables +<br/>weighting schema"]
+
+    J["<b>PWS_JOINED_BG_POP.csv</b><br/>(Contaminant measurements)"]
+
+    K["<b>03_add_population_weights.R</b><br/>Areal interpolation;<br/>tract-level weight normalization"]
+
+    M["<b>contam_tract_level</b><br/>Weighted contaminant values<br/>at census tract level"]
+
+    A --> B --> C
+    D --> E
+    D --> F
+    C --> E
+    C --> F
+    E --> G
+    F --> G
+    G --> H --> I
+    I --> K
+    J --> K
+    K --> M
+
+    style G fill:#dbeafe,stroke:#3b82f6
+    style I fill:#dbeafe,stroke:#3b82f6
+    style M fill:#dcfce7,stroke:#16a34a
+    style C fill:#fef9c3,stroke:#ca8a04
+```
+
+### Script Descriptions
+
+```{r}
+#| label: 'script-table'
+scripts <- tibble::tribble(
+  ~Script                                                                                                                                                                                                                                                                              , ~Purpose       ,
+  ~`Key Inputs`                                                                                                                                                                                                                                                                        , ~`Key Outputs` ,
+
+  "00_convert_to_geoparquet.R"                                                                                                                                                                                                                                                         ,
+  "Downloads 2010 US census tract geometries and total population (P001001) via the tidycensus package, then writes the result to Apache Parquet format for efficient downstream use."                                                                                                 ,
+  "Census Decennial API (2010)"                                                                                                                                                                                                                                                        ,
+  "data/source_data/tracts/tract10_national.parquet"                                                                                                                                                                                                                                   ,
+
+  "01_ingest_shapefiles_duckdb.R"                                                                                                                                                                                                                                                      ,
+  "Reads contiguous US census tracts, block groups, and EPA v3 water system boundaries. Fixes invalid geometries, resolves duplicate PWSIDs via st_union(), reprojects all layers to EPSG:5070, and loads them into DuckDB."                                                           ,
+  "tract10_national.parquet · Block group SHPs · Service_Areas_V_3_0.gpkg"                                                                                                                                                                                                             ,
+  "DuckDB: tract10_5070 · block10_group_5070 · epa_water_v3_5070"                                                                                                                                                                                                                      ,
+
+  "01_ingest_AK_HI_duckdb.R"                                                                                                                                                                                                                                                           ,
+  "Same ingestion workflow as the contiguous script, but filters to Alaska (FIPS 02) and Hawaii (FIPS 15) and reprojects each state to its own CRS to preserve spatial accuracy."                                                                                                      ,
+  "Same source files filtered to AK / HI"                                                                                                                                                                                                                                              ,
+  "DuckDB: ak_*_3338 (Alaska) · hi_*_6628 (Hawaii)"                                                                                                                                                                                                                                    ,
+
+  "02_intersect_census_pws.R"                                                                                                                                                                                                                                                          ,
+  "Performs spatial intersections between census units (tracts and block groups) and EPA water system boundaries for all regions. Calculates overlap areas using ST_Area() and ST_Intersection(), then assembles combined US-wide weighting tables in a dedicated 'weighting' schema." ,
+  "DuckDB spatial tables from the two ingest scripts"                                                                                                                                                                                                                                  ,
+  "DuckDB: tract/block intersection tables · weighting.us_tract10_pws_v3 · weighting.us_bg10_group_pws_v3"                                                                                                                                                                             ,
+
+  "03_add_population_weights.R"                                                                                                                                                                                                                                                        ,
+  "(v1) Implements areal interpolation: distributes block group population proportionally by overlap area, normalizes weights at the tract level when a tract is served by multiple systems, and filters to tracts with >50% public water coverage."                                   ,
+  "Intersection tables · PWS_JOINED_BG_POP.csv"                                                                                                                                                                                                                                        ,
+  "In-memory: contam_tract_level (weighted contaminant values at tract level)"
+)
+
+reactable(
+  scripts,
+  columns = list(
+    Script = colDef(
+      name = "Script",
+      minWidth = 180,
+      style = list(fontFamily = "monospace", fontSize = "0.85em")
+    ),
+    Purpose = colDef(name = "Purpose", minWidth = 280),
+    `Key Inputs` = colDef(name = "Key Inputs", minWidth = 200),
+    `Key Outputs` = colDef(name = "Key Outputs", minWidth = 200)
+  ),
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  pagination = FALSE,
+  wrap = TRUE,
+  theme = reactableTheme(
+    headerStyle = list(background = "#f1f5f9", fontWeight = "600")
+  )
+)
+```
+
+---
+
+## Database Schema — `data/tract_water_system_db.duckdb`
+
+The DuckDB database stores all intermediate geospatial and intersection tables produced
+by the pipeline. It contains two schemas:
+
+- **`main`** — Base geometry tables and per-region intersection outputs
+- **`weighting`** — US-wide combined intersection tables (no geometry) used for population weighting
+
+```{r}
+#| label: 'db-connect'
+#| include: false
+con <- dbConnect(
+  duckdb(),
+  dbdir = 'C:/git/epa_water_stuff/data/tract_water_system_db.duckdb',
+  read_only = TRUE
+)
+```
+
+### Table Overview
+
+```{r}
+#| label: 'table-overview'
+table_descriptions <- c(
+  "main.tract10_5070" = "Contiguous US census tracts (2010), EPSG:5070",
+  "main.block10_group_5070" = "Contiguous US census block groups (2010), EPSG:5070",
+  "main.epa_water_v3_5070" = "EPA v3 public water system service area boundaries, EPSG:5070",
+  "main.tract10_pws_v3_5070" = "Contiguous US tract × water system spatial intersections with overlap areas, EPSG:5070",
+  "main.block10_group_pws_v3_5070" = "Contiguous US block group × water system spatial intersections with overlap areas, EPSG:5070",
+  "main.ak_tract10_3338" = "Alaska census tracts (2010), EPSG:3338",
+  "main.ak_block10_group_3338" = "Alaska census block groups (2010), EPSG:3338",
+  "main.ak_epa_water_v3_3338" = "Alaska EPA v3 water system boundaries, EPSG:3338",
+  "main.ak_tract10_pws_v3_3338" = "Alaska tract × water system spatial intersections, EPSG:3338",
+  "main.ak_block10_group_pws_v3_3338" = "Alaska block group × water system spatial intersections, EPSG:3338",
+  "main.hi_tract10_6628" = "Hawaii census tracts (2010), EPSG:6628",
+  "main.hi_block10_group_6628" = "Hawaii census block groups (2010), EPSG:6628",
+  "main.hi_epa_water_v3_6628" = "Hawaii EPA v3 water system boundaries, EPSG:6628",
+  "main.hi_tract10_pws_v3_6628" = "Hawaii tract × water system spatial intersections, EPSG:6628",
+  "main.hi_block10_group_pws_v3_6628" = "Hawaii block group × water system spatial intersections, EPSG:6628",
+  "weighting.us_tract10_pws_v3" = "US-wide tract × water system intersections, all regions combined (no geometry)",
+  "weighting.us_bg10_group_pws_v3" = "US-wide block group × water system intersections, all regions combined (no geometry)"
+)
+
+raw_counts <- dbGetQuery(
+  con,
+  "
+  SELECT
+    schema_name AS table_schema,
+    table_name,
+    estimated_size AS row_count
+  FROM duckdb_tables()
+  ORDER BY schema_name, table_name
+"
+)
+
+overview <- raw_counts |>
+  mutate(
+    table_key = paste0(table_schema, ".", table_name),
+    Description = table_descriptions[table_key],
+    Schema = table_schema,
+    Table = table_name,
+    `Row Count` = format(row_count, big.mark = ",")
+  ) |>
+  select(Schema, Table, `Row Count`, Description)
+
+reactable(
+  overview,
+  columns = list(
+    Schema = colDef(
+      minWidth = 80,
+      style = list(fontFamily = "monospace", fontSize = "0.85em")
+    ),
+    Table = colDef(
+      minWidth = 200,
+      style = list(fontFamily = "monospace", fontSize = "0.85em")
+    ),
+    `Row Count` = colDef(minWidth = 90, align = "right"),
+    Description = colDef(minWidth = 300)
+  ),
+  groupBy = "Schema",
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  pagination = FALSE,
+  theme = reactableTheme(
+    headerStyle = list(background = "#f1f5f9", fontWeight = "600")
+  )
+)
+```
+
+### Column Detail
+
+```{r}
+#| label: 'column-detail'
+columns_df <- dbGetQuery(
+  con,
+  "
+  SELECT
+    table_schema,
+    table_name,
+    column_name,
+    data_type,
+    ordinal_position
+  FROM information_schema.columns
+  ORDER BY table_schema, table_name, ordinal_position
+"
+)
+
+col_display <- columns_df |>
+  mutate(
+    Schema = table_schema,
+    Table = table_name,
+    Column = column_name,
+    Type = data_type
+  ) |>
+  select(Schema, Table, Column, Type)
+
+reactable(
+  col_display,
+  columns = list(
+    Schema = colDef(
+      minWidth = 80,
+      style = list(fontFamily = "monospace", fontSize = "0.85em")
+    ),
+    Table = colDef(
+      minWidth = 200,
+      style = list(fontFamily = "monospace", fontSize = "0.85em")
+    ),
+    Column = colDef(
+      minWidth = 180,
+      style = list(fontFamily = "monospace", fontSize = "0.85em")
+    ),
+    Type = colDef(
+      minWidth = 100,
+      style = list(fontFamily = "monospace", fontSize = "0.85em")
+    )
+  ),
+  groupBy = c("Schema", "Table"),
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  searchable = TRUE,
+  pagination = FALSE,
+  theme = reactableTheme(
+    headerStyle = list(background = "#f1f5f9", fontWeight = "600")
+  )
+)
+```
+
+```{r}
+#| label: 'db-disconnect'
+#| include: false
+dbDisconnect(con)
+```
