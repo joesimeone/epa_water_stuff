@@ -35,6 +35,10 @@ download_epa_stable <- function(file_name, base_url, tox_file, dest_dir) {
 }
 
 
+## =======================================================================
+# Calls | Arsenic & TTHM ----
+## =======================================================================
+
 download_epa_stable(
   base_url = "https://www.epa.gov/sites/default/files/2018-04/",
   file_name = 'syr3_phasechem_1_0.zip',

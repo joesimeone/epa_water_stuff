@@ -12,6 +12,8 @@ arsenic_file <-
   read_csv(
     here::here(
       'data',
+      'source_data',
+      'epa_water',
       'epa_6yr_review',
       'arsenic_clean.csv'
     )
@@ -21,6 +23,8 @@ tthm_file <-
   read_csv(
     here::here(
       'data',
+      'source_data',
+      'epa_water',
       'epa_6yr_review',
       'TTHM_clean.csv'
     )
@@ -38,6 +42,7 @@ arsenic_pwsid <-
   summarise(
     min = min(value, na.rm = TRUE),
     arsenic_median = median(value, na.rm = TRUE),
+    arsenic_detect_level_med = median(detection_limit_value, na.rm = TRUE),
     mean = mean(value, na.rm = TRUE),
     max = max(value, na.rm = TRUE),
     sd = sd(value, na.rm = TRUE),
@@ -45,7 +50,8 @@ arsenic_pwsid <-
   ) |>
   mutate(
     contam = 'arsenic',
-    arsenic_unit = 'mg_l'
+    arsenic_unit = 'mg_l',
+    arsenic_detect_unit = 'mg_l'
   )
 
 
@@ -57,6 +63,7 @@ tthm_pwsid <-
   summarise(
     min = min(value, na.rm = TRUE),
     tthm_median = median(value, na.rm = TRUE),
+    tthm_detect_level_med = median(detection_limit_value, na.rm = TRUE),
     mean = mean(value, na.rm = TRUE),
     max = max(value, na.rm = TRUE),
     sd = sd(value, na.rm = TRUE),
@@ -64,16 +71,17 @@ tthm_pwsid <-
   ) |>
   mutate(
     contam = 'tthm',
-    tthm_unit = 'ug_l'
+    tthm_unit = 'ug_l',
+    tthm_detect_unit = 'ug_l'
   )
 
 #' Combine medians (request) into 2 columns, by pwsid ---------------------
 
 arsenic_tthm_combo <-
   arsenic_pwsid |>
-  select(pwsid, arsenic_median, arsenic_unit) |>
+  select(pwsid, arsenic_median, arsenic_unit, arsenic_detect_level_med) |>
   left_join(
-    tthm_pwsid |> select(pwsid, tthm_median, tthm_unit),
+    tthm_pwsid |> select(pwsid, tthm_median, tthm_unit, tthm_detect_level_med),
     by = c('pwsid')
   )
 
