@@ -89,16 +89,16 @@ ak_bg_pws_v3_query <-
 
 hi_tract_pws_v3_query <-
   generate_itws_query(
-    tbl_name = 'hi_tract10_pws_v3_6628',
-    lhs_geom = 'hi_tract10_6628',
-    rhs_geom = 'hi_epa_water_v3_6628'
+    tbl_name = 'hi_tract10_pws_v3_3759',
+    lhs_geom = 'hi_tract10_3759',
+    rhs_geom = 'hi_epa_water_v3_3759'
   )
 
 hi_bg_pws_v3_query <-
   generate_itws_query(
-    tbl_name = 'hi_block10_group_pws_v3_6628',
-    lhs_geom = 'hi_block10_group_6628',
-    rhs_geom = 'hi_epa_water_v3_6628'
+    tbl_name = 'hi_block10_group_pws_v3_3759',
+    lhs_geom = 'hi_block10_group_3759',
+    rhs_geom = 'hi_epa_water_v3_3759'
   )
 
 
@@ -122,8 +122,8 @@ non_contig_tables <-
   c(
     'ak_tract10_pws_v3_3338',
     'ak_block10_group_pws_v3_3338',
-    'hi_tract10_pws_v3_6628',
-    'hi_block10_group_pws_v3_6628'
+    'hi_tract10_pws_v3_3759',
+    'hi_block10_group_pws_v3_3759'
   )
 
 
@@ -155,7 +155,7 @@ SELECT * EXCLUDE (geom_wkb) FROM tract10_pws_v3_5070
 UNION ALL
 SELECT * EXCLUDE (geom_wkb) FROM ak_tract10_pws_v3_3338
 UNION ALL
-SELECT * EXCLUDE (geom_wkb) FROM hi_tract10_pws_v3_6628"
+SELECT * EXCLUDE (geom_wkb) FROM hi_tract10_pws_v3_3759"
   )
 } else {
   cli::cli_alert_success('table already written')
@@ -170,7 +170,7 @@ SELECT * EXCLUDE (geom_wkb) FROM block10_group_pws_v3_5070
 UNION ALL
 SELECT * EXCLUDE (geom_wkb) FROM ak_block10_group_pws_v3_3338
 UNION ALL
-SELECT * EXCLUDE (geom_wkb) FROM hi_block10_group_pws_v3_6628"
+SELECT * EXCLUDE (geom_wkb) FROM hi_block10_group_pws_v3_3759"
   )
 } else {
   cli::cli_alert_success('table already written')

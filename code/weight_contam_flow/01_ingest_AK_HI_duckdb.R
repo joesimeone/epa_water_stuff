@@ -222,14 +222,14 @@ ingest_geoms(
 ## Hawaii Calls
 ingest_geoms(
   source_dat = bg_shapefile,
-  crs_info = 6628,
+  crs_info = 3759,
   fips_code = '15',
   tbl_name = 'hi_block10_group'
 )
 
 ingest_geoms(
   source_dat = tract_shp,
-  crs_info = 6628,
+  crs_info = 3759,
   fips_code = '15',
   tbl_name = 'hi_tract10'
 )
@@ -239,7 +239,7 @@ st_geometry(epa_water_v3_sf) <- "Shape"
 
 ingest_geoms(
   source_dat = epa_water_v3_sf,
-  crs_info = 6628,
+  crs_info = 3759,
   fips_abbr = 'HI',
   tbl_name = 'hi_epa_water_v3',
   type = 'pws'
