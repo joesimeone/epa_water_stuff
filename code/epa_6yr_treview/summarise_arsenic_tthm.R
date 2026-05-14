@@ -37,7 +37,12 @@ tthm_file <-
 arsenic_pwsid <-
   arsenic_file |>
   mutate(
-    value = replace_na(value, 0)
+    detection_limit_value = if_else(
+      is.na(detection_limit_value),
+      0,
+      detection_limit_value
+    ),
+    value = if_else(is.na(value), (detection_limit_value / sqrt(2)), value)
   ) |>
   summarise(
     min = min(value, na.rm = TRUE),
@@ -58,7 +63,12 @@ arsenic_pwsid <-
 tthm_pwsid <-
   tthm_file |>
   mutate(
-    value = replace_na(value, 0)
+    detection_limit_value = if_else(
+      is.na(detection_limit_value),
+      0,
+      detection_limit_value
+    ),
+    value = if_else(is.na(value), (detection_limit_value / sqrt(2)), value)
   ) |>
   summarise(
     min = min(value, na.rm = TRUE),
