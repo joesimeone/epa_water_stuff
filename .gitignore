@@ -38,3 +38,4 @@ documentation/epa_water/systems/New_System_Sourced_V_2_1.csv
 documentation/epa_water/systems/README.md
 documentation/epa_water/systems/Removed_Systems_V_2_1.csv
 documentation/epa_water/ucmr_data/ucmr3-data-summary.pdf
+quarto/sanity_checks/check_covariate_files/*
