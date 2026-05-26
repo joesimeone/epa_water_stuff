@@ -3,11 +3,21 @@ library(httr2)
 library(tidyverse)
 library(jsonlite)
 
+
+#' Store state & nation boundary files locally
+options(tigris_use_cache = TRUE)
+options(tigris_cache_dir = "data/tigris_cache")
+
+
+## =======================================================================
+# Credentials | How we login to NASA ----
+## =======================================================================
+
 resp <-
   request("https://appeears.earthdatacloud.nasa.gov/api/login") |>
   req_auth_basic(
     Sys.getenv("nasa_earth_dat_username"),
-    Sys.getenv("nas_earth_dat_password")
+    Sys.getenv("nasa_earth_dat_password")
   ) |>
   req_method("POST") |>
   req_perform()
