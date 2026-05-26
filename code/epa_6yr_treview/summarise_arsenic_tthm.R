@@ -98,3 +98,8 @@ arsenic_tthm_combo <-
 ## =======================================================================
 # Write summarized results  ----
 ## =======================================================================
+
+write_csv(
+  arsenic_tthm_combo,
+  'data/covariates/epa_6yr_review/arsenic_tthm_medians.csv'
+)
