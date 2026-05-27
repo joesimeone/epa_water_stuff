@@ -53,6 +53,7 @@ st_write_parquet(
   here::here(
     'data',
     'source_data',
+    'census_boundaries',
     'tracts',
     'tract10_national.parquet'
   )
