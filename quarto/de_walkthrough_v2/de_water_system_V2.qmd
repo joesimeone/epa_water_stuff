@@ -14,7 +14,6 @@ format:
 ```{r}
 #| label: 'pre-reqs'
 #| include: false
-
 # Imports ----------------------------------------------------------------
 library(sf)
 library(tidyverse)
@@ -22,11 +21,11 @@ library(mapgl)
 library(rcartocolor)
 
 # Load pre-processed Delaware spatial data (from de_data_prep.R) ---------
-epa_water_de         <- readRDS("data/epa_water_de.rds")
-block10_group_de     <- readRDS("data/block10_group_de.rds")
-tract10_pws_de       <- readRDS("data/tract10_pws_de.rds")
+epa_water_de <- readRDS("data/epa_water_de.rds")
+block10_group_de <- readRDS("data/block10_group_de.rds")
+tract10_pws_de <- readRDS("data/tract10_pws_de.rds")
 block10_group_pws_de <- readRDS("data/block10_group_pws_de.rds")
-tract10_de           <- readRDS("data/tract10_de.rds")
+tract10_de <- readRDS("data/tract10_de.rds")
 
 options(USE_TIGRIS_CACHE = TRUE)
 st_bounds <-
@@ -49,7 +48,6 @@ pws_dat_v1 <-
       pad = "0"
     )
   )
-
 ```
 
 # Overview
@@ -77,9 +75,10 @@ flowchart TD
     A["Census block groups (2010)"] --> S1
     B["EPA water system boundaries v2"] --> S1
 
-    S1["1. Intersect 2010 census block groups | EPA Water System data and areally reweight:
+    S1["1. Intersect & normalize areal weights:
 
-    $$bg\_wgt\_pop = pop \times \frac{overlap\_area}{block\_area}$$"]
+    $$w = \frac{overlap\_area}{block\_area};\quad w^* = \frac{w}{\sum w} \text{ if } \sum w > 1$$
+    $$bg\_wgt\_pop = pop \times w^*$$"]
 
     S1 --> S2["2. Scale to tract × PWS:
 
@@ -89,9 +88,9 @@ flowchart TD
 
     C["Census tract total population"] --> S3
 
-    S3["3. Sum to all people in tract served by any water systen; cap at tract total:
+    S3["3. Sum to all people in tract served by any water system:
 
-    $$ct\_pop\_pws = \min\left(\sum pop\_bg\_pws,\; tract\_pop\right)$$"]
+    $$ct\_pop\_pws = \sum pop\_bg\_pws$$"]
 
     S3 --> S4["4. Create Population weight:
 
@@ -127,7 +126,6 @@ We use geographic intersections between **census block groups** and **public wat
 #| fig-cap: '*2010 Census Block Groups vs EPA Public System Water Boundaries* (Click geometry for more info)'
 #| fig-width: 8
 #| fig-height: 8
-
 check_boundary_files <- function(
   water_dat,
   block_dat,
@@ -230,7 +228,6 @@ check_boundary_files(
 ```{r}
 #| label: intersect map 1
 #| echo: false
-
 demo_systems <- c(
   'DAGSBORO|SELBYVILLE|WILMINGTON|ARTESIAN WATER|ELLENDALE|CAPTAIN'
 )
@@ -327,7 +324,6 @@ view_census_pws <- function(
   return(its_map)
 }
 
-
 #view_census_pws(tract10_pws_de, '10')
 ```
 
@@ -351,8 +347,6 @@ block10_group_pws_map <-
   )
 
 block10_group_pws_map
-
-
 ```
 
 When I apply an intersection operation, R checks whether two geometries overlap, and if so, returns a new geometry representing only the area where they intersect — clipping away everything outside the overlap. Now, only the areas where tracts and water systems overlap are returned, with each tract-water system intersection rendered as its own polygon. To see how much each new polygon overlaps, users can click on a colored section of the map.
@@ -363,7 +357,6 @@ We can see how many tracts & blocks were intersected with each water system like
 #| echo: true
 #| collapse: true
 #| code-fold: true
-
 block_pws_counts <-
   block10_group_pws_de |>
   st_drop_geometry() |>
@@ -381,7 +374,6 @@ tract_pws_counts <-
 tract_pws_counts |>
   left_join(block_pws_counts) |>
   arrange(desc(n_blocks))
-
 ```
 
 These relationships underly the entire reweighting protocol.
@@ -392,7 +384,6 @@ With block group population estimates, tract population estimates, and intersect
 
 ```{r}
 #| include: false
-
 de_contam_sys <-
   pws_dat_v1 |>
   mutate(st_fips = substr(geo_tweak, 1, 2)) |>
@@ -405,9 +396,15 @@ pws_reweighted <-
   filter(PWSID %in% de_contam_sys) |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
-    bg_wgt_pop = value * wgt
+    wgt = overlap_area / block10_group_5070_area
   ) |>
+  group_by(GEOID) |>
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt = if_else(wgt_sum > 1, wgt / wgt_sum, wgt)
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_pop = value * wgt) |>
   summarise(
     bg_wgt_pop = sum(bg_wgt_pop),
     total_unwgt_pop = sum(value),
@@ -428,21 +425,26 @@ pws_reweighted <-
     by = c('tract_geoid' = 'GEOID', 'PWSID')
   ) |>
   filter(bg_wgt_pop != 0)
-
 ```
 
 ## Step 1 | Areal weights
 
 At this point, we've already completed the intersection. We start with 2010 census block groups and EPA public water system boundaries, compute their geographic overlap, and use the resulting intersection areas to create areal weights.
 
-$$bg\_wgt\_pop = pop \times \frac{overlap\_area}{block\_area}$$
+$$w_{ij} = \frac{overlap\_area_{ij}}{block\_area_i}$$
 
-**Interpretation:** How many actual people in each block group are served by an intersecting water system
+$$w_{ij}^* = \begin{cases}
+\dfrac{w_{ij}}{\sum_{j} w_{ij}} & \text{if } \sum_{j} w_{ij} > 1 \\
+w_{ij} & \text{otherwise}
+\end{cases}$$
+
+$$bg\_wgt\_pop = pop \times w^*$$
+
+**Interpretation:** How many actual people in each block group are served by an intersecting water system. When a block group straddles multiple water systems, we normalize the weights so that they sum to at most 1, preventing double-counting.
 
 ### Code & Data Example
 
-We start by dividing the overlapping area & total block area to create a weight. Then we multiply the block group's population by
-this weight:
+We start by dividing the overlapping area by total block area to create a raw weight. When a block group intersects multiple water systems and the weights sum to more than 1, we normalize them by dividing each weight by the sum. We then multiply the block group's population by the normalized weight:
 
 ```{r}
 #| echo: true
@@ -452,7 +454,15 @@ block10_group_pws_de |>
   st_drop_geometry() |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
+    wgt = overlap_area / block10_group_5070_area
+  ) |>
+  group_by(GEOID) |>
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt = if_else(wgt_sum > 1, wgt / wgt_sum, wgt)
+  ) |>
+  ungroup() |>
+  mutate(
     bg_wgt_pop = value * wgt,
     bg_wgt_pop = round(bg_wgt_pop, 3)
   ) |>
@@ -462,6 +472,7 @@ block10_group_pws_de |>
     PWS_Name,
     value,
     wgt,
+    wgt_sum,
     bg_wgt_pop,
     overlap_area,
     block10_group_5070_area
@@ -475,7 +486,7 @@ block10_group_pws_de |>
 
 ----
 
-Block group **1001** has an estimated 2,637 people. 1,724,054 of its 4,9674,152.68 meters squared intersects with Artesian Northern Kent Regional Water System. We take this ratio of intersected land area and total block group area and multiply it with the raw population estimates to get roughly **91.52**.
+Block group **1001** has an estimated 2,637 people. 1,724,054 of its 4,9674,152.68 meters squared intersects with Artesian Northern Kent Regional Water System. We take this ratio of intersected land area and total block group area and multiply it with the raw population estimates to get roughly **91.52**. Because this block only intersects one water system, its weight sum is already below 1 and no normalization is applied.
 
 In other words, when taking into account how much of the block physically intersects with the Artesian North Kent Water System, we think that 91.52 of the 2,637 estimated residents are likely served by this system.
 
@@ -497,9 +508,15 @@ block10_group_pws_de |>
   st_drop_geometry() |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
-    bg_wgt_pop = value * wgt
+    wgt = overlap_area / block10_group_5070_area
   ) |>
+  group_by(GEOID) |>
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt = if_else(wgt_sum > 1, wgt / wgt_sum, wgt)
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_pop = value * wgt) |>
   summarise(
     bg_wgt_pop = sum(bg_wgt_pop),
     total_unwgt_pop = sum(value),
@@ -525,9 +542,15 @@ block10_group_pws_de |>
   st_drop_geometry() |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
-    bg_wgt_pop = value * wgt
+    wgt = overlap_area / block10_group_5070_area
   ) |>
+  group_by(GEOID) |>
+  mutate(
+    wgt_sum = sum(wgt),
+    wgt = if_else(wgt_sum > 1, wgt / wgt_sum, wgt)
+  ) |>
+  ungroup() |>
+  mutate(bg_wgt_pop = value * wgt) |>
   filter(
     PWS_Name == 'ARTESIAN NORTHERN KENT REGIONAL',
     tract_geoid == '10001040100'
@@ -551,11 +574,11 @@ Artesian intersected with 2 census block groups in tract 100 (1001 & 1002). We s
 
 ## Step 3 | Derive water system service across entire tract
 
-Sum the census tract – water system population estimate to the tract level. Cap these tract level estimates at the true census tract estimate to address double counted block groups.
+Sum the census tract – water system population estimate to the tract level. Because we normalized the areal weights in Step 1, the summed population will not exceed the true tract total, so no capping is needed.
 
 **Interpretation:** The number of people in each census tract served by any water system
 
-$$ct\_pop\_pws = \min\left(\sum pop\_bg\_pws,\; tract\_pop\right)$$
+$$ct\_pop\_pws = \sum pop\_bg\_pws$$
 
 ### Code & Data Example
 
@@ -577,18 +600,14 @@ ct_pop_joe <-
   tract10_de |>
   arrange(GEOID)
 
-## Cap population at actual tract level to deal with double counted block groups
 ## derive some coverage stats
 pws_populations <-
   pws_reweighted |>
   left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
   left_join(ct_pop_joe, by = join_by('tract_geoid' == 'GEOID')) |>
   mutate(
-    ct_pop_pws_relevel = pmin(ct_pop_pws, tract_total_pop)
-  ) |>
-  mutate(
-    pws_ct_total_prop = round(bg_wgt_pop / tract_total_pop, 2), # Proportion of PWS to total CT
-    pws_ct_pwsarea_prop = round(bg_wgt_pop / ct_pop_pws, 2) # Proportion of PWS to CT PWS area
+    pws_ct_total_prop = round(bg_wgt_pop / tract_total_pop, 2),
+    pws_ct_pwsarea_prop = round(bg_wgt_pop / ct_pop_pws, 2)
   )
 pws_populations |>
   arrange(tract_geoid) |>
@@ -601,21 +620,13 @@ pws_populations |>
 
 In tract **100**, we estimate that there are **119.47** people (`ct_pop_pws`) served by 3 water systems - **Artesian**, **Kenton Pump District**, and **Twin Maples Trailer Park**.
 
-We compare this value to to the true tract population estimate (`tract_total_pop`: 6,541) to see if it exceeds this value. In this case, it does not, and so we store the 119.47 in a variable called `ct_pop_pws_relevel`.
+### Why normalization matters
 
-Users might wonder why we need this capping thing:
+In an earlier version, we used unnormalized weights (`wgt = overlap_area / block_area`) and capped the tract total with `pmin(ct_pop_pws, tract_total_pop)`. The problem was that block groups straddling multiple water systems could be double-counted, pushing `ct_pop_pws` above the true tract population. The `pmin()` cap fixed the tract-level total but left individual tract * water system estimates distorted.
 
-```{r}
-#| echo: true
-#| collapse: true
+By normalizing the weights in Step 1 — dividing each weight by the sum when it exceeds 1 — we fix the problem at the source. Each block group's population is spread proportionally over intersecting water systems rather than counted multiple times.
 
-pws_populations |>
-  select(tract_geoid, PWSID, ct_pop_pws, tract_total_pop) |>
-  filter(ct_pop_pws > tract_total_pop) |>
-  head(5)
-```
-
-In a handful of cases (36), our tract population served by a water system estimate is higher than the tract's total population. This is because a block group straddled systems and was double counted.
+We can see the before-and-after for a block that straddles two systems:
 
 ```{r}
 #| echo: true
@@ -625,16 +636,54 @@ block10_group_pws_de |>
   st_drop_geometry() |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
-    bg_wgt_pop = value * wgt
+    wgt_raw = overlap_area / block10_group_5070_area,
+    bg_wgt_pop_raw = value * wgt_raw
   ) |>
+  group_by(GEOID) |>
+  mutate(
+    wgt_sum = sum(wgt_raw),
+    wgt_normalized = if_else(wgt_sum > 1, wgt_raw / wgt_sum, wgt_raw),
+    bg_wgt_pop_normalized = value * wgt_normalized
+  ) |>
+  ungroup() |>
   filter(tract_geoid == '10003014702') |>
-  select(tract_geoid, block_geoid = GEOID, PWS_Name, bg_wgt_pop, value)
-
+  select(
+    tract_geoid,
+    block_geoid = GEOID,
+    PWS_Name,
+    value,
+    wgt_raw,
+    bg_wgt_pop_raw,
+    wgt_normalized,
+    bg_wgt_pop_normalized,
+    wgt_sum
+  ) |>
+  mutate(across(where(is.numeric), ~ round(., 4))) |>
+  reactable::reactable()
 
 ```
 
-Here, you see that block **021** intersects with both the **Newark Water Department** and **Veolia**. This means that the initial 1,927 value got weighted twice. When we sum to tract level, this double counting can push the number higher than the number of people who actually live in a tract.
+Here, block **021** intersects with both the **Newark Water Department** and **Veolia**. Without normalization, the 1,927 people in this block would be weighted twice, inflating our tract-level estimate. With normalized weights, the population is proportionally split between the two systems based on their relative overlap areas.
+
+We can verify that `ct_pop_pws` no longer exceeds the true tract population:
+
+```{r}
+#| echo: true
+#| collapse: true
+
+pws_populations |>
+  select(tract_geoid, PWSID, ct_pop_pws, tract_total_pop) |>
+  filter(ct_pop_pws > tract_total_pop) |>
+  mutate(diff = ct_pop_pws - tract_total_pop) |>
+  filter(diff > 1e-6) |>
+  nrow()
+```
+
+::: {.callout-note}
+## Duplicate water system IDs
+
+In rare cases, some states (IA, FL, MT, VA) have duplicate water system IDs — the same PWSID associated with multiple, non-contiguous geometries. Normalization alone doesn't address this because the populations are counted once per geometry. These require dissolving with `st_union()` before intersection as a separate fix.
+:::
 
 ## Step 4 | Create population weight
 
@@ -666,7 +715,7 @@ pws_contam <-
   distinct(tract_geoid, PWSID, .keep_all = TRUE) |> ## Why are there duplicates?
   mutate(
     wgt_flag = if_else(n_pws > 1, 1, 0), # Will help us determine whether we need to weight contaminants estimates or not
-    population_weight = bg_wgt_pop / ct_pop_pws_relevel # Population in each tract water system / total population served by each water system
+    population_weight = bg_wgt_pop / ct_pop_pws
   ) |>
   group_by(tract_geoid, wgt_flag) |>
   mutate(
@@ -685,7 +734,7 @@ pws_contam |>
     PWS_Name,
     n_pws,
     bg_wgt_pop,
-    ct_pop_pws_relevel,
+    ct_pop_pws,
     population_weight
   ) |>
   mutate(across(where(is.numeric), ~ round(.x, 5))) |>
@@ -711,7 +760,7 @@ pws_contam |>
     PWS_Name,
     n_pws,
     bg_wgt_pop,
-    ct_pop_pws_relevel,
+    ct_pop_pws,
     population_weight
   ) |>
   filter(n_pws == 1) |>
@@ -740,7 +789,7 @@ pws_contam |>
     PWS_Name,
     n_pws,
     bg_wgt_pop,
-    ct_pop_pws_relevel,
+    ct_pop_pws,
     population_weight,
     chlrt_md
   ) |>
@@ -774,7 +823,7 @@ contam_tract_level <-
     PWS_Name,
     n_pws,
     bg_wgt_pop,
-    ct_pop_pws_relevel,
+    ct_pop_pws,
     population_weight,
     chlrt_md
   ) |>
