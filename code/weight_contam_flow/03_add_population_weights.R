@@ -304,7 +304,7 @@ write_csv(
   here::here(
     'data',
     'results',
-    'weighted_tract_level_ucmr_contam.csv'
+    'weighted_tract_level_ucmr_contam_wide.csv'
   )
 )
 
