@@ -229,22 +229,40 @@ pws_tract_contam <-
   )) |>
   select(-contains('_detectpws_weighted'))
 
+
+## =======================================================================
+# Finish up tract exposure data
+## =======================================================================
+
+tract_any_detect <-
+  pws_tract_contam |>
+  select(tract_geoid, contains(c('_detect'))) |>
+  arrange(tract_geoid) |>
+  distinct() |>
+  group_by(tract_geoid) %>%
+  summarise(across(
+    ends_with("_detectpws"),
+    ~ as.numeric(any(. == 1, na.rm = TRUE))
+  )) %>%
+  ungroup()
+
+
 contam_tract_level <-
   pws_tract_contam |>
   group_by(tract_geoid) |>
   summarise(
     across(
       ends_with("_weighted"),
-      ~ round(sum(.x, na.rm = TRUE), 2),
+      ~ round(sum(.x, na.rm = TRUE), 9),
       .names = "{.col}_sum"
     ),
     .groups = "drop"
   ) |>
   left_join(ct_pop_joe, by = join_by(tract_geoid == GEOID)) |>
   left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
+  left_join(tract_any_detect, by = join_by(tract_geoid)) |>
   mutate(
-    pws_coverage_proportion = round(ct_pop_pws / tract_total_pop, 3),
-    included = if_else(pws_coverage_proportion > 0.5, "yes", "no")
+    pws_coverage_proportion = round(ct_pop_pws / tract_total_pop, 3)
   )
 
 ## =======================================================================
@@ -281,16 +299,46 @@ pws_contam <-
   )) |>
   select(-contains('_detectpws_weighted'))
 
+
+## =======================================================================
+# Finish up water system exposure data
+## =======================================================================
+
+#' Roll up proportion of tract population served by water system flag
+#'   Does a water system serve at least X% of population??
+
+pws_pop_served <-
+  pws_populations |>
+  summarise(
+    pws_pop_served_flag = sum(pws_ct_total_prop),
+    .by = c('PWSID')
+  )
+
+#' Add dectection flags back to the finished data
+pws_detect_flags <-
+  ucmr_combo_dat |>
+  select(PWSID, contains(c('detectpws')))
+
+
 contam_pws_level <-
   pws_contam |>
   group_by(PWSID) |>
   summarise(
     across(
       ends_with("_weighted"),
-      ~ round(sum(.x, na.rm = TRUE), 2),
+      ~ round(sum(.x, na.rm = TRUE), 9),
       .names = "{.col}_sum"
     ),
     .groups = "drop"
+  ) |>
+  left_join(pws_pop_served, by = join_by(PWSID)) |>
+  left_join(pws_detect_flags, by = join_by(PWSID)) |>
+  mutate(
+    inclusion_threshold = if_else(
+      pws_pop_served_flag > .10,
+      1,
+      0
+    )
   )
 
 
