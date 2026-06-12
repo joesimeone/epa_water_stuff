@@ -90,7 +90,7 @@ tthm_pwsid <-
 arsenic_tthm_combo <-
   arsenic_pwsid |>
   select(pwsid, arsenic_median, arsenic_unit, arsenic_detect_level_med) |>
-  left_join(
+  full_join(
     tthm_pwsid |> select(pwsid, tthm_median, tthm_unit, tthm_detect_level_med),
     by = c('pwsid')
   )
