@@ -1,0 +1,575 @@
+---
+title: "Public Water Systems Across Time"
+subtitle: "UCMR 1 -5 --> EPA v3 Water System Boundaries ---> EPA 6-Year Review 2006 - 2011"
+format: 
+    html:
+        mainfont: inter
+        echo: true
+        code-fold: true
+        toc: true
+        number-sections: true
+        number-depth: 2
+---
+
+
+```{r}
+#| include: false
+library(haven)
+library(tidyverse)
+library(duckdb)
+
+## =======================================================================
+# Imports  ----
+## =======================================================================
+
+pws_main_source <-
+  read_rds(
+    'C:/git/epa_water_stuff/quarto/pwsid_helper/data/pws_main_source.rds'
+  )
+
+ucmr_info <-
+  read_csv(
+    'C:/git/epa_water_stuff/quarto/pwsid_helper/helper_files/ucmr_data_summary_all_rounds.csv'
+  )
+
+#' ucmr data from anneclaire
+ucmr_combo_dat <-
+  haven::read_sas(
+    'C:/Users/js5466/Drexel University/De Roos,Anneclaire - UCMR_CodedData-PWS_ForMDAC/ucmrcombined_pwscoded.sas7bdat'
+  )
+
+con <- dbConnect(
+  duckdb(),
+  'C:/git/epa_water_stuff/data/tract_water_system_db.duckdb',
+  read_only = TRUE
+)
+
+v3_dat <-
+  tbl(con, 'epa_water_v3_5070')
+
+
+arsenic_tthm_combo <-
+  read_csv(
+    'C:/git/epa_water_stuff/data/covariates/epa_6yr_review/arsenic_tthm_medians.csv'
+  )
+```
+
+# Purpose
+
+To work through how our outcome data in **UCMR Rounds 1-5** line up with **version 3 of the EPA's water system boundary files** and the **2006 - 2011 6-year contaminant review.** Essentially, we have a crisis of joins. Public Water Systems (PWS) don't appear to be static over time, which causes discrepancies between each file source. We can best check these discrepancies against each other, and against the SDWA dataset. First released in 2021, this data offers quarterly snapshot of all Public Water Systems across the United States. Although imperfect because it comes from a far more recent time point than early UCMR rounds or the 6 year review, it gives us at least something to measure against. 
+
+I'll offer an overview of each EPA source and the dive into why discrepancies may exist across each file. 
+
+
+# SDWA Dataset (Most Authoritative Source)
+
+The [Safe Drinking Water Act (SDWA)](https://echo.epa.gov/tools/data-downloads/sdwa-download-summary) data offers a comprehensive overview of Public Water Systems across the United States. These data are updated quarterly, and can be downloaded [here](https://echo.epa.gov/tools/data-downloads). The download is a zip file, and data is structured as individual csvs that collect information on violations, testing facilities, geographic areas, and more. 
+
+For our purposes, where we want to estimate contaminant exposure in Community Water Systems (CWS), the most important file is the `SDWA_PUB_WATER_SYSTEMS.csv`.
+
+## Public Water Systems File | Basic Structure
+
+Let's get a quick snapshot of the data: 
+
+```{r}
+#| collapse: true
+#| code-fold: show
+head(pws_main_source)
+```
+
+Here, we can see that these data reflect public water systems as of Q1 2026 (`SUBMISSIONYEARQUARTER`). Each row represents one public water system has a unique identifier (`PWSID`), and a name (`PWS_NAME`), and a slew of additional information. For the full list of fields and descriptions, see the [data summary page](https://echo.epa.gov/tools/data-downloads/sdwa-download-summary).
+
+## Counting things 
+
+We can use this data to get a comprehensive overview of Public Water Systems (PWS) as of Q1 2026:
+
+```{r}
+#| code-fold: show
+#| collapse: true
+#' How many systems in the data?
+nrow(pws_main_source)
+
+#' How many are active (A), inactive (I), moved from public to non-public (N),
+#' merged with another system, or Potential future system to be regulated
+pws_main_source |>
+  janitor::tabyl(PWS_ACTIVITY_CODE)
+
+#' Type of Water system, transient community, non-transient community etc etc
+pws_main_source |>
+  janitor::tabyl(PWS_TYPE_CODE)
+```
+
+There are **433,698** water systems in the dataset. Of these, 143,021 are active and 262,586 are inactive. Further, these public water systems can fall into several different categories: 
+
+!['*Taken from about the data page*'](helper_files/pws_types.png)
+
+Most water systems are transient non-coummunity water systems, meaning the system does not regularly serve 25 of the same persons over 6 months in a year. For our purposes, we're more interested in **CWS** (homes, developments, apartments, etc.), and maybe **NTNCWS**, which serve places such as schools, office buildings and restaurants. 
+
+### Population Served
+
+The other thing that we need to look at is population, which informs how the EPA samples during it's ucmr rounds. Here, I'll focus on all active and inactve CWS & TNCWS.
+
+
+```{r}
+#| fig-width: 8
+#| fig-height: 6
+#| fig-cap: "*Number of people served by a water system*"
+pop_levels <- c(
+  "≤500",
+  "501–3,300",
+  "3,301–10,000",
+  "10,001–100,000",
+  ">100,000"
+)
+
+pws_main_source |>
+  filter(
+    PWS_ACTIVITY_CODE %in% c('A', 'I'),
+    PWS_TYPE_CODE %in% c('CWS', 'NTNCWS')
+  ) |>
+  mutate(
+    pop_buckets = factor(
+      case_match(
+        POP_CAT_5_CODE,
+        1 ~ "≤500",
+        2 ~ "501–3,300",
+        3 ~ "3,301–10,000",
+        4 ~ "10,001–100,000",
+        5 ~ ">100,000"
+      ),
+      levels = pop_levels
+    )
+  ) |>
+  ggplot(aes(x = as.factor(pop_buckets), fill = pop_buckets)) +
+  geom_bar(color = "lightgray") +
+  theme_minimal() +
+  coord_flip() +
+  scale_fill_brewer(palette = 'Dark2') +
+  labs(
+    x = 'Pop Bins'
+  ) +
+  facet_wrap(
+    ~PWS_TYPE_CODE,
+    nrow = 2,
+    scales = 'free'
+  )
+```
+
+Across both system types, the large majority of water systems falls below 500. You'll see why this matters in the UCMR Rounds Section. 
+
+# UCMR Rounds Dataset | Prepared By Anneclaire
+
+As a part of the [Safe Drinking Water Act (SDWA)](https://www.epa.gov/sdwa), the [Unregulated Contaminant Monitoring Rule (UCMR)](https://www.epa.gov/dwucmr/occurrence-data-unregulated-contaminant-monitoring-rule), provides nationally representative information on contaminants of potential concern in Public Water Systems. These contaminants have been detected in water systems, but no regulations have yet been placed on them. 
+
+The EPA Collects Data Every 5 Years.
+
+1. [UCMR-1 (2001 - 2005)](https://www.epa.gov/system/files/documents/2024-04/ucmr1-data-summary.pdf)
+1.[ UCMR-2 (2008 - 2010)](https://www.epa.gov/system/files/documents/2024-04/ucmr2-data-summary.pdf)
+1. [UCMR-3 (2013 - 2015)](https://www.epa.gov/system/files/documents/2024-04/ucmr3-data-summary.pdf)
+1. [UCMR-4 (2018 - 2020)](https://www.epa.gov/sites/default/files/2018-10/documents/ucmr4-data-summary.pdf)
+1. [UCMR-5 (2023 - 2025)](https://www.epa.gov/system/files/documents/2023-08/ucmr5-data-summary_0.pdf)
+
+## Contaminants Summary Tables
+
+
+```{r}
+ucmr_info |>
+  reactable::reactable(
+    searchable = TRUE,
+    filterable = TRUE,
+    sortable = TRUE,
+    highlight = TRUE,
+    borderless = TRUE,
+    striped = TRUE,
+    compact = TRUE,
+    defaultPageSize = 20,
+    paginationType = "jump",
+    showSortIcon = TRUE,
+    style = list(
+      fontFamily = "system-ui, -apple-system, sans-serif",
+      fontSize = "13px"
+    ),
+    theme = reactable::reactableTheme(
+      backgroundColor = "transparent",
+      borderColor = "#e0e0e0",
+      stripedColor = "#f8f9fa",
+      highlightColor = "#edf2f7",
+      headerStyle = list(
+        borderBottom = "2px solid #4a5568",
+        color = "#2d3748",
+        fontWeight = 600,
+        fontSize = "12px",
+        textTransform = "uppercase",
+        letterSpacing = "0.5px",
+        padding = "10px 8px"
+      ),
+      cellStyle = list(
+        padding = "6px 8px"
+      ),
+      searchInputStyle = list(
+        border = "1px solid #cbd5e0",
+        borderRadius = "6px",
+        padding = "6px 10px",
+        fontSize = "13px"
+      ),
+      filterInputStyle = list(
+        border = "1px solid #e2e8f0",
+        borderRadius = "4px",
+        padding = "4px 6px",
+        fontSize = "12px"
+      ),
+      paginationStyle = list(
+        fontSize = "13px"
+      )
+    )
+  )
+```
+
+
+### UCMR Sampling Strategy
+
+Looking through the table, there are way fewer water systems results (`total_num_pws_with_results`) than there are active water systems in the main SDWA data. By and large, this can be explained by the UCMR's sampling strategy. During each round of data collection, the EPA breaks public water systems into 2 sets - **assessment monitoring** and **screening survey**. 
+
+The assement monitoring set consists of all Public Water Systems serving more than 10,000 people. The screening survey consists of PWS serving fewer (or in some cases more) than 10,000 people. Information is collected from every public water system in the assessment monitoring set, and a random sample of those public water systems in the screening survey set. Both the contaminants monitored and the number of public water systems sampled from the screening set vary across time, but the broad approach is the same.
+
+
+Contaminants surveyed varied across assessment monitoring and screening survey groups, and not every contaminant was monitored for every system type or size category.^[For example, in Round 4, disinfection byproduct monitoring was limited to systems subject to disinfectant and disinfection byproduct rules. Similarly, general chemicals (e.g., manganese, germanium, 1-butanol) and cyanotoxins followed different sampling frameworks.]
+
+| Round | Assessment Monitoring | Screening Survey |
+|---|---|---|
+| **Round 1** (2001–2005) | All PWSs serving >10,000 people; 800 representative PWSs serving ≤10,000 | 300 additional PWSs^[Round 1's screening survey sample was not nationally representative.] |
+| **Round 2** (2007–2011) | All PWSs serving >10,000 people; 800 representative PWSs serving ≤10,000 | All PWSs serving >100,000; 320 representative systems serving 10,001–100,000; 480 representative systems serving <10,000 |
+| **Round 3** (2013–2015) | All PWSs serving >10,000 people; 800 representative PWSs serving ≤10,000 | Same as Round 2 |
+| **Round 4** (2018–2020) | *Cyanotoxins:* All SW/GWUDI PWSs serving >10,000; 800 randomly selected SW/GWUDI systems serving <10,000. *Other chemicals:* Added GW systems serving >10,000; separate sample of 800 small SW/GWUDI/GW systems | None |
+| **Round 5** (2022–2026) | All SW/GWUDI/MX/GW PWSs serving >10,000; all SW/GWUDI/MX/GW PWSs serving 3,300–10,000; 800 randomly selected SW/GWUDI/MX/GW PWSs serving <3,300 | nONE |
+
+: UCMR Monitoring Requirements by Round {#tbl-ucmr}
+
+
+
+# EPA v3 Modeled Public Water System Boundaries
+
+As of March 2026, the EPA published water system boundary files for **44,166** community water systems and **77,469** NTNCWS. These data reflect the universe of water systems as of Quarter 4 2023. EPA staff developed these boundaries through a combination of the official boundaries made available by state authorities, decision tree modeling, and random forest modeling. All told, analysts derived boundaries for 93.4% community water systems providing water to more than 99% of the population.
+
+![*Water System Boundaries overlaid over 2010 census block groups in Delaware.*](helper_files/homeland_pws_census_blocks.png)
+
+For a full accounting of their methodology and its limitations, see [documenation](C:\git\epa_water_stuff\quarto\pwsid_helper\helper_files\Water_System_Serivce_Area_Technical_Documentation.pdf) here.
+
+## Q4 2023 Boundary Data vs Q1 2026 SDWA Data 
+
+When we compare the universe of community water systems as of Q4 2023 to the universe of community water systems as of Q1 2026, we'll see that community water systems aren't static across time. Rather, they change in a few key ways. 
+
+
+```{r}
+#| code-fold: show
+#| collapse: true
+cws_only <-
+  pws_main_source |>
+  #filter(PWS_TYPE_CODE == 'CWS') |>
+  select(
+    PWSID,
+    PWS_NAME_SRC = PWS_NAME,
+    PWS_ACTIVITY_CODE,
+    PWS_TYPE_CODE,
+    q3_26_pop = POPULATION_SERVED_COUNT,
+    PRIMARY_SOURCE_CODE,
+    SERVICE_CONNECTIONS_COUNT
+  )
+
+
+bounds_vs_main <-
+  v3_dat |>
+  select(PWSID, PWS_Name, q1_2023_pop = Population_Served_Count) |>
+  collect() |>
+  left_join(cws_only, by = join_by(PWSID))
+
+
+janitor::tabyl(bounds_vs_main, PWS_ACTIVITY_CODE)
+```
+
+Here, I've joined the boundary data to the main sdwa data, and spit out a table of the activity codes associated with each water system in the boundary file. The vast majority of them are active, but in the intervening period between 2023 and 2026, a handful have gone inactive (I) or changed from public to non-public (n). Additionally, there are 10 that weren't found in the q1 2026 file at all. I think these are systems that have had some more structural change that none of the other activity codes captures (mergers, code changes etc).
+
+# UCMR Rounds vs Q1 2026 SDWA File
+
+```{r}
+#|include: FALSE
+ucmr_combo_dat <-
+  ucmr_combo_dat |>
+  rename_with(
+    ~ paste0(.x, "_UCMR1"),
+    .cols = matches("^(dcpa|perchlorate)_")
+  ) |>
+
+  # UCMR3 (exclude _35_ combined vars and _3_ suffix vars handled separately)
+  rename_with(
+    ~ paste0(.x, "_UCMR3"),
+    .cols = matches(
+      "^(HCFC22|Halon1011|dichloroethane11|dioxane14|chlorate|chromium6?|cobalt|molybdenum|strontium|vanadium)_"
+    )
+  ) |>
+  rename_with(
+    ~ paste0(.x, "_UCMR3"),
+    .cols = matches(
+      "^(pfbs_3|pfhpa_3|pfhxs_3|pfna_3|pfoa_3|pfos_3|pfasany_3|pfospfoa_3)_"
+    )
+  ) |>
+
+  # UCMR4
+  rename_with(
+    ~ paste0(.x, "_UCMR4"),
+    .cols = matches("^(haa5|haa6br|haa9|butanol1|germanium|manganese)_")
+  ) |>
+
+  # UCMR5 (exclude _35_ combined vars)
+  rename_with(
+    ~ paste0(.x, "_UCMR5"),
+    .cols = matches("^(fts62|pfba|pfhxa|pfpea|lithium)_")
+  ) |>
+  rename_with(
+    ~ paste0(.x, "_UCMR5"),
+    .cols = matches(
+      "^(pfbs_5|pfhpa_5|pfhxs_5|pfna_5|pfoa_5|pfos_5|pfasany_5|pfasany_5t|pfospfoa_5)_"
+    )
+  ) |>
+
+  # UCMR3 or 5 (combined measures)
+  rename_with(
+    ~ paste0(.x, "_UCMR3or5"),
+    .cols = matches("^(pfbs_35|pfhpa_35|pfhxs_35|pfna_35|pfoa_35|pfos_35)_")
+  )
+```
+
+
+
+```{r}
+#| collapse: TRUE
+#| code-fold: show
+join_to_main <- function(ac_dat, ucmr_era_str) {
+  ac_dat |>
+    filter(if_any(ends_with(ucmr_era_str), ~ !is.na(.))) |>
+    left_join(cws_only, by = join_by(PWSID))
+}
+
+
+ucmr1_pws <-
+  join_to_main(
+    ucmr_combo_dat,
+    'ucmr1'
+  )
+
+ucmr3_pws <-
+  join_to_main(
+    ucmr_combo_dat,
+    'ucmr3'
+  )
+
+ucmr4_pws <-
+  join_to_main(
+    ucmr_combo_dat,
+    'ucmr4'
+  )
+
+
+ucmr5_pws <-
+  join_to_main(
+    ucmr_combo_dat,
+    'ucmr5'
+  )
+
+map(
+  list(ucmr1_pws, ucmr3_pws, ucmr4_pws, ucmr5_pws),
+  ~ .x |> janitor::tabyl(PWS_ACTIVITY_CODE)
+) |>
+  set_names(c('ucmr1', 'ucmr3', 'ucmr4', 'ucmr5'))
+```
+
+
+## UCMR Rounds 1-5 vs Boundary Data 
+
+```{r}
+#| code-fold: show
+#| collapse: true
+v3_in_mem <-
+  v3_dat |>
+  select(PWSID, PWS_Name, q1_2023_pop = Population_Served_Count) |>
+  collect()
+
+
+#' How Many CWS water systems don't have a corresponding boundary for any reason?
+ucmr_to_v3 <-
+  map(
+    list(ucmr1_pws, ucmr3_pws, ucmr4_pws, ucmr5_pws),
+    ~ .x |>
+      filter(PWS_TYPE_CODE == 'CWS') |>
+      left_join(v3_in_mem, by = join_by(PWSID))
+  ) |>
+  set_names(c('ucmr1', 'ucmr3', 'ucmr4', 'ucmr5'))
+
+#' Where variable from boundary file is missing, return | Means it has no corresponding boundary
+ucmr_no_bounds <-
+  map(
+    ucmr_to_v3,
+    ~ .x |>
+      filter(is.na(q1_2023_pop)) |>
+      select(
+        PWSID,
+        PWS_Name,
+        PWS_NAME_SRC,
+        PWS_ACTIVITY_CODE,
+        PWS_TYPE_CODE,
+        PRIMARY_SOURCE_CODE,
+        SERVICE_CONNECTIONS_COUNT,
+        q1_2023_pop,
+        q3_26_pop
+      )
+  )
+
+#' Return the number of systems with no boundaries
+map(ucmr_no_bounds, nrow)
+
+#' Return their activity code
+map(ucmr_no_bounds, ~ .x |> janitor::tabyl(PWS_ACTIVITY_CODE))
+```
+
+**Possibilities:**
+
+1. Discrepancy in universe of water systems in Q4 2023 (when boundary data was created) vs each ucmr round.
+2. The EPA wasn't able to reliably model these boundaries.
+
+Both of these seem kind of weak. You'd expect the discrepancy to grow with time if 1 is the case. And you'd expect these to be rural / small population systems, and it seems like a mix. I can't think of other reasons though. 
+
+
+# EPA 6-year Review 2006 - 2011 | Arsenic & TTHM 
+
+Between 2006 - 2011, the EPA collected contaminants occurrence data from 54 out of 67 states/ primacy agencies, covering 95% of all Public water systems and 92% of the population served by public water systems. Data were collected on a voluntary basis and were stored in the SYR3 ICR Dataset. Contaminants monitored include:
+
+1. Disinfectants
+1. DBP precursors
+1. microbial contaminants
+1. disinfectant residuals
+1. treatment information 
+
+For our purposes, we are most interested in **arsenic** and **tthm** (or total disinfection byproducts).
+
+## Data Availability
+
+1. **Arsenic:** Available for all **50 states**, and **54,845** water systems
+1. **TTHM:** Available for 46 states (excluding Delaware, Georgia, Maryland,  & New Hampshire), and 36,691 water systems.
+
+Data are still (?) said to be nationally representative.
+
+
+# SYR3 ICR Dataset vs Q1 2026 SDWA File
+
+After flattening SYR3 data to medians for arsenic and tthm, here's how they compare to the Q1 2026 SDWA File. 
+
+
+```{r}
+#| collapse: true
+syr_sdwa_join <-
+  arsenic_tthm_combo |>
+  left_join(cws_only, by = c('pwsid' = 'PWSID'))
+
+#' How do the 54,000ish systems with arsenic data compare to q1 2026 sdwa
+syr_sdwa_join |>
+  filter(!is.na(arsenic_median)) |>
+  janitor::tabyl(PWS_ACTIVITY_CODE)
+
+#' How do the 36,000ish systems with TTHM available compare to q1 2026 sdwa
+syr_sdwa_join |>
+  filter(!is.na(tthm_median)) |>
+  janitor::tabyl(PWS_ACTIVITY_CODE)
+
+
+#' What do states look like without sdwa entries?
+
+syr_sdwa_join |>
+  filter(!is.na(arsenic_median) & is.na(PWS_ACTIVITY_CODE)) |>
+  mutate(st_string = substr(pwsid, 1, 2)) |>
+  janitor::tabyl(st_string)
+
+
+#' Plus unavailable data in Delaware, MD, Mass, Georgi and New Hampshire
+syr_sdwa_join |>
+  filter(!is.na(tthm_median) & is.na(PWS_ACTIVITY_CODE)) |>
+  mutate(st_string = substr(pwsid, 1, 2)) |>
+  janitor::tabyl(st_string)
+```
+
+
+## UCMR Rounds 1-5 vs SYR3 
+
+
+```{r}
+#| collapse: TRUE
+ucmr_v_arsenic <-
+  map(
+    list(ucmr1_pws, ucmr3_pws, ucmr4_pws, ucmr5_pws),
+    ~ .x |>
+      left_join(
+        arsenic_tthm_combo |> filter(!is.na(arsenic_median)),
+        by = c('PWSID' = 'pwsid')
+      )
+  )
+
+
+ucmr_v_tthm <-
+  map(
+    list(ucmr1_pws, ucmr3_pws, ucmr4_pws, ucmr5_pws),
+    ~ .x |>
+      left_join(
+        arsenic_tthm_combo |> filter(!is.na(tthm_median)),
+        by = c('PWSID' = 'pwsid')
+      )
+  )
+
+
+#' How many ucmr rounds are missing arsenic data
+map(
+  ucmr_v_arsenic,
+  ~ .x |>
+    filter(is.na(arsenic_median)) |>
+    nrow()
+)
+
+#' How many ucmr rounds are missing tthme data
+map(
+  ucmr_v_tthm,
+  ~ .x |>
+    filter(is.na(tthm_median)) |>
+    nrow()
+)
+
+#' Breakdowns of missing water system type activity codes
+map(
+  ucmr_v_arsenic,
+  ~ .x |>
+    filter(is.na(arsenic_median)) |>
+    janitor::tabyl(PWS_ACTIVITY_CODE)
+)
+
+map(
+  ucmr_v_tthm,
+  ~ .x |>
+    filter(is.na(tthm_median)) |>
+    janitor::tabyl(PWS_ACTIVITY_CODE)
+)
+
+
+# Which states?
+map(
+  ucmr_v_arsenic,
+  ~ .x |>
+    filter(is.na(arsenic_median)) |>
+    mutate(st_string = substr(PWSID, 1, 2)) |>
+    janitor::tabyl(st_string)
+)
+
+map(
+  ucmr_v_tthm,
+  ~ .x |>
+    filter(is.na(tthm_median)) |>
+    mutate(st_string = substr(PWSID, 1, 2)) |>
+    janitor::tabyl(st_string)
+)
+```
