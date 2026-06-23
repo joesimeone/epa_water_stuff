@@ -1,3 +1,26 @@
+#' PURPOSE:
+#'   Apply Areal weights to Anneclaire's public water system
+#'   ucmr data. We use the intersection area of a block group
+#'   and water system to re-calculate population spread across the o
+#'   overlap area.
+#'
+#'   Once that's done, we create 2 sets of population weights:
+#'     1. tract level contaminant exposure, reweighted by our estimate
+#'        of a given proportion of a tract served by a water system /
+#'        the number of total people in the tract served by any water system
+#'     2. Water system level contaminant exposure reweighted by our estimate
+#'        of the people within a tract served by a water system / the total
+#'        number of people the water system serves. Here, all weights wind
+#'        up summing to 1, so I'm pretty sure it just reproduces the initial
+#'        exposure estimate of a water system
+#'
+#'    Output:
+#'     1. Tract level ucmr contaminant exposure where at least 10% of the tract's
+#'        total population is served by a water system.
+#'     2. Water system level ucmr contaminant exposure, where at least 10% of the
+#'        intersecting tracts' total population is served by a water system.
+#'
+
 # Imports ----------------------------------------------------------------
 library(sf)
 library(tidyverse)
@@ -265,6 +288,28 @@ contam_tract_level <-
     pws_coverage_proportion = round(ct_pop_pws / tract_total_pop, 3)
   )
 
+#' Capture how many systems we'll exclude with coverage flag threshold
+#' The number of people we estimate in a tract divided by the total
+#' number of people in a tract
+
+#' Excludes 6,243 tracts out of 67,102
+contam_tract_level |>
+  filter(
+    pws_coverage_proportion <= .1
+  ) |>
+  nrow()
+
+#' Now we want to exclude those tracts and a column for the leftover
+#' proportion of population served by, theoretically, some private water
+#' system
+
+contam_tract_level <-
+  contam_tract_level |>
+  mutate(
+    prop_no_pws = 1 - pws_coverage_proportion
+  )
+
+
 ## =======================================================================
 # PWS-Level Weighting -----
 ## =======================================================================
@@ -307,12 +352,41 @@ pws_contam <-
 #' Roll up proportion of tract population served by water system flag
 #'   Does a water system serve at least X% of population??
 
-pws_pop_served <-
+contig_pop_served <-
+  tbl(con, 'epa_water_v3_5070') |>
+  select(PWSID, Population_Served_Count) |>
+  collect()
+
+ak_pop_served <-
+  tbl(con, 'ak_epa_water_v3_3338') |>
+  select(PWSID, Population_Served_Count) |>
+  collect()
+
+
+hi_pop_served <-
+  tbl(con, 'hi_epa_water_v3_3759') |>
+  select(PWSID, Population_Served_Count) |>
+  collect()
+
+water_sys_pop_served <-
+  rbind(
+    contig_pop_served,
+    ak_pop_served,
+    hi_pop_served
+  )
+
+pws_coverage <-
   pws_populations |>
   summarise(
-    pws_pop_served_flag = sum(pws_ct_total_prop),
-    .by = c('PWSID')
+    served_pop = sum(bg_wgt_pop), # population your interpolation captured
+    .by = PWSID
+  ) |>
+  left_join(water_sys_pop_served, by = "PWSID") |>
+  mutate(
+    capture_rate = served_pop / Population_Served_Count,
+    inclusion_flag = if_else(capture_rate >= 0.1, "yes", "no")
   )
+
 
 #' Add dectection flags back to the finished data
 pws_detect_flags <-
@@ -331,16 +405,11 @@ contam_pws_level <-
     ),
     .groups = "drop"
   ) |>
-  left_join(pws_pop_served, by = join_by(PWSID)) |>
-  left_join(pws_detect_flags, by = join_by(PWSID)) |>
-  mutate(
-    inclusion_threshold = if_else(
-      pws_pop_served_flag > .10,
-      1,
-      0
-    )
-  )
+  left_join(pws_coverage, by = join_by(PWSID)) |>
+  left_join(pws_detect_flags, by = join_by(PWSID))
 
+#' Capture the number of systems that will be excluded by the population
+#' served flag
 
 ## =======================================================================
 # write wide data for further uses ----
