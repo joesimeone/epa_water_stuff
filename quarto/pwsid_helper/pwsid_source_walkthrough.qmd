@@ -400,7 +400,7 @@ ucmr_to_v3 <-
   map(
     list(ucmr1_pws, ucmr3_pws, ucmr4_pws, ucmr5_pws),
     ~ .x |>
-      filter(PWS_TYPE_CODE == 'CWS') |>
+    #  filter(PWS_TYPE_CODE == 'CWS') |>
       left_join(v3_in_mem, by = join_by(PWSID))
   ) |>
   set_names(c('ucmr1', 'ucmr3', 'ucmr4', 'ucmr5'))
