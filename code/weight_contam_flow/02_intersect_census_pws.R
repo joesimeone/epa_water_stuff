@@ -102,16 +102,71 @@ hi_bg_pws_v3_query <-
   )
 
 
+## =======================================================================
+# Adding NTNCs to the fray ----
+## =======================================================================
+## V3 Queries (Contiguous US)
+tract_ntnc_v3_query <-
+  generate_itws_query(
+    tbl_name = 'tract10_pws_v3_ntnc_5070',
+    lhs_geom = 'tract10_5070',
+    rhs_geom = 'ntnc_v3_5070'
+  )
+
+block_group_ntnc_v3_query <-
+  generate_itws_query(
+    tbl_name = 'block10_group_pws_v3_ntnc_5070',
+    lhs_geom = 'block10_group_5070',
+    rhs_geom = 'ntnc_v3_5070'
+  )
+
+ak_tract_ntnc_v3_query <-
+  generate_itws_query(
+    tbl_name = 'ak_tract10_pws_v3_ntnc_3338',
+    lhs_geom = 'ak_tract10_3338',
+    rhs_geom = 'ak_ntnc_v3_3338'
+  )
+
+ak_block_group_ntnc_v3_query <-
+  generate_itws_query(
+    tbl_name = 'ak_block10_group_pws_v3_ntnc_3338',
+    lhs_geom = 'ak_block10_group_3338',
+    rhs_geom = 'ak_ntnc_v3_3338'
+  )
+
+hi_tract_ntnc_v3_query <-
+  generate_itws_query(
+    tbl_name = 'hi_tract10_pws_v3_ntnc_3759',
+    lhs_geom = 'hi_tract10_3759',
+    rhs_geom = 'hi_ntnc_v3_3759'
+  )
+
+hi_block_group_ntnc_v3_query <-
+  generate_itws_query(
+    tbl_name = 'hi_block10_group_pws_v3_ntnc_3759',
+    lhs_geom = 'hi_block10_group_3759',
+    rhs_geom = 'hi_ntnc_v3_3759'
+  )
+
+
 # Execute Queries  -------------------------------------------------------
 
 ## Contiguous US
 if (
   !all(
-    c('block10_group_pws_v3_5070', 'tract10_pws_v3_5070') %in% dbListTables(con)
+    c(
+      'block10_group_pws_v3_5070',
+      'tract10_pws_v3_5070',
+      'tract10_pws_v3_ntnc_5070',
+      'block10_group_pws_v3_ntnc_5070'
+    ) %in%
+      dbListTables(con)
   )
 ) {
   dbExecute(con, tract_pws_5070_v3_query)
   dbExecute(con, block_group_pws_5070_v3_query)
+  dbExecute(con, tract_ntnc_v3_query)
+  dbExecute(con, block_group_ntnc_v3_query)
 } else {
   cli::cli_alert_info('v3 data already written')
 }
@@ -131,8 +186,12 @@ non_contig_tables <-
 if (!all(sapply(non_contig_tables, dbExistsTable, conn = con))) {
   dbExecute(con, ak_tract_pws_v3_query)
   dbExecute(con, hi_tract_pws_v3_query)
+  dbExecute(con, ak_tract_ntnc_v3_query)
+  dbExecute(con, hi_tract_ntnc_v3_query)
   dbExecute(con, ak_bg_pws_v3_query)
   dbExecute(con, hi_bg_pws_v3_query)
+  dbExecute(con, ak_block_group_ntnc_v3_query)
+  dbExecute(con, hi_block_group_ntnc_v3_query)
 } else {
   cli::cli_alert_info('v3 data already written')
 }
@@ -171,6 +230,36 @@ UNION ALL
 SELECT * EXCLUDE (geom_wkb) FROM ak_block10_group_pws_v3_3338
 UNION ALL
 SELECT * EXCLUDE (geom_wkb) FROM hi_block10_group_pws_v3_3759"
+  )
+} else {
+  cli::cli_alert_success('table already written')
+}
+
+
+if (!c('us_tract10_ntnc_v3' %in% dbListTables(con))) {
+  dbExecute(
+    con,
+    "CREATE TABLE weighting.us_tract10_ntnc_v3 AS 
+SELECT * EXCLUDE (geom_wkb) FROM tract10_pws_v3_ntnc_5070
+UNION ALL
+SELECT * EXCLUDE (geom_wkb) FROM ak_tract10_pws_v3_ntnc_3338
+UNION ALL
+SELECT * EXCLUDE (geom_wkb) FROM hi_tract10_pws_v3_ntnc_3759"
+  )
+} else {
+  cli::cli_alert_success('table already written')
+}
+
+
+if (!c('us_bg10_group_ntnc_v3' %in% dbListTables(con))) {
+  dbExecute(
+    con,
+    "CREATE TABLE weighting.us_bg10_group_ntnc_v3 AS 
+SELECT * EXCLUDE (geom_wkb) FROM block10_group_pws_v3_ntnc_5070
+UNION ALL
+SELECT * EXCLUDE (geom_wkb) FROM ak_block10_group_pws_v3_ntnc_3338
+UNION ALL
+SELECT * EXCLUDE (geom_wkb) FROM hi_block10_group_pws_v3_ntnc_3759"
   )
 } else {
   cli::cli_alert_success('table already written')
