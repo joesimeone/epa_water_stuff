@@ -45,7 +45,26 @@ con <- dbConnect(
 )
 
 v3_dat <-
-  tbl(con, 'epa_water_v3_5070')
+  tbl(con, 'epa_water_v3_5070') |>
+  select(PWSID, PWS_Name, q1_2023_pop = Population_Served_Count) |>
+  collect()
+
+ak_v3_dat <-
+  tbl(con, 'ak_epa_water_v3_3338') |>
+  select(PWSID, PWS_Name, q1_2023_pop = Population_Served_Count) |>
+  collect()
+
+hi_v3_dat <-
+  tbl(con, 'hi_epa_water_v3_3759') |>
+  select(PWSID, PWS_Name, q1_2023_pop = Population_Served_Count) |>
+  collect()
+
+v3_in_mem <-
+  rbind(
+    v3_dat,
+    ak_v3_dat,
+    hi_v3_dat
+  )
 
 
 arsenic_tthm_combo <-
@@ -273,14 +292,13 @@ cws_only <-
     PWS_TYPE_CODE,
     q3_26_pop = POPULATION_SERVED_COUNT,
     PRIMARY_SOURCE_CODE,
-    SERVICE_CONNECTIONS_COUNT
+    SERVICE_CONNECTIONS_COUNT,
+    PRIMACY_AGENCY_CODE
   )
 
 
 bounds_vs_main <-
-  v3_dat |>
-  select(PWSID, PWS_Name, q1_2023_pop = Population_Served_Count) |>
-  collect() |>
+  v3_in_mem |>
   left_join(cws_only, by = join_by(PWSID))
 
 
@@ -389,18 +407,13 @@ map(
 ```{r}
 #| code-fold: show
 #| collapse: true
-v3_in_mem <-
-  v3_dat |>
-  select(PWSID, PWS_Name, q1_2023_pop = Population_Served_Count) |>
-  collect()
-
 
 #' How Many CWS water systems don't have a corresponding boundary for any reason?
 ucmr_to_v3 <-
   map(
     list(ucmr1_pws, ucmr3_pws, ucmr4_pws, ucmr5_pws),
     ~ .x |>
-    #  filter(PWS_TYPE_CODE == 'CWS') |>
+      #  filter(PWS_TYPE_CODE == 'CWS') |>
       left_join(v3_in_mem, by = join_by(PWSID))
   ) |>
   set_names(c('ucmr1', 'ucmr3', 'ucmr4', 'ucmr5'))
@@ -573,3 +586,125 @@ map(
     janitor::tabyl(st_string)
 )
 ```
+
+## How much population coverage does 2006 - 2011 SYR data offer? 
+
+
+```{r}
+#| include: false
+
+pws_pop_coverage <-
+  pws_main_source |>
+  summarise(
+    q1_2023_ref_pop = sum(POPULATION_SERVED_COUNT),
+    .by = c(PRIMACY_AGENCY_CODE, PWS_TYPE_CODE)
+  ) |>
+  arrange(PRIMACY_AGENCY_CODE, PWS_TYPE_CODE)
+
+v3_syr_sdwa_weird <-
+  v3_in_mem |>
+  left_join(syr_sdwa_join, by = c('PWSID' = 'pwsid'))
+
+arsenic_sys_pop_counts <-
+  v3_syr_sdwa_weird |>
+  filter(!is.na(arsenic_median)) |>
+  summarise(
+    arsenic_pop_coverage = sum(q1_2023_pop),
+    .by = c(PRIMACY_AGENCY_CODE, PWS_TYPE_CODE)
+  ) |>
+  arrange(PRIMACY_AGENCY_CODE, PWS_TYPE_CODE)
+
+
+tthm_pop_coverage <-
+  v3_syr_sdwa_weird |>
+  filter(!is.na(tthm_median)) |>
+  summarise(
+    tthm_pop_coverage = sum(q1_2023_pop),
+    .by = c(PRIMACY_AGENCY_CODE, PWS_TYPE_CODE)
+  ) |>
+  arrange(PRIMACY_AGENCY_CODE, PWS_TYPE_CODE)
+
+
+pop_coverage_comps <-
+  pws_pop_coverage |>
+  left_join(
+    arsenic_sys_pop_counts
+  ) |>
+  left_join(
+    tthm_pop_coverage
+  ) |>
+  mutate(
+    arsenic_pop_comp = arsenic_pop_coverage / q1_2023_ref_pop,
+    tthm_pop_comp = tthm_pop_coverage / q1_2023_ref_pop
+  ) |>
+  mutate(
+    across(c(arsenic_pop_comp, tthm_pop_comp), function(x) replace_na(x, 0))
+  )
+
+arsenic_pop_plot <-
+  pop_coverage_comps |>
+  filter(
+    PWS_TYPE_CODE == 'CWS',
+    !PRIMACY_AGENCY_CODE %in% c('AS', 'GU', 'MP', 'PR', 'VI')
+  ) |>
+  ggplot(aes(
+    arsenic_pop_comp,
+    forcats::fct_reorder(PRIMACY_AGENCY_CODE, arsenic_pop_comp)
+  )) +
+  geom_point(color = "#08519C") +
+  theme_minimal() +
+  labs(
+    x = 'Arsenic | % of Population Sampled',
+    y = 'EPA Primacy Agency'
+  )
+
+tthm_pop_plot <-
+  pop_coverage_comps |>
+  filter(
+    PWS_TYPE_CODE == 'CWS',
+    !PRIMACY_AGENCY_CODE %in% c('AS', 'GU', 'MP', 'PR', 'VI')
+  ) |>
+  ggplot(aes(
+    tthm_pop_comp,
+    forcats::fct_reorder(PRIMACY_AGENCY_CODE, tthm_pop_comp)
+  )) +
+  geom_point(color = "#A50F15") +
+  theme_minimal() +
+  labs(
+    x = 'TTHM | % of Population Sampled',
+    y = 'EPA Primacy Agency'
+  )
+
+with(
+  pop_coverage_comps,
+  median(arsenic_pop_comp[PWS_TYPE_CODE == 'CWS'], na.rm = TRUE)
+)
+with(
+  pop_coverage_comps,
+  median(tthm_pop_comp[PWS_TYPE_CODE == 'CWS'], na.rm = TRUE)
+)
+```
+
+::: {.panel-tabset}
+
+### Arsenic Population Coverage
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| out-width: '100%'
+
+arsenic_pop_plot
+```
+
+
+### TTHM Population Coverage
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| out-width: '100%'
+
+tthm_pop_plot
+```
+
+:::
