@@ -252,11 +252,11 @@ pws_tract_contam <-
   )) |>
   select(-contains('_detectpws_weighted'))
 
-
 ## =======================================================================
 # Finish up tract exposure data
 ## =======================================================================
 
+tictoc::tic()
 tract_any_detect <-
   pws_tract_contam |>
   select(tract_geoid, contains(c('_detect'))) |>
@@ -265,9 +265,14 @@ tract_any_detect <-
   group_by(tract_geoid) %>%
   summarise(across(
     ends_with("_detectpws"),
-    ~ as.numeric(any(. == 1, na.rm = TRUE))
-  )) %>%
+    ~ case_when(
+      all(is.na(.)) ~ NA_real_,
+      any(. == 1, na.rm = TRUE) ~ 1,
+      TRUE ~ 0
+    )
+  )) |>
   ungroup()
+tictoc::toc()
 
 
 contam_tract_level <-
