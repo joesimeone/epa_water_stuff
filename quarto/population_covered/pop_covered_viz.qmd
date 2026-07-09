@@ -1,0 +1,767 @@
+---
+title: "What can we do with six year review 2006 - 2011 data?"
+format: 
+    html:
+        echo: true
+        mainfont: inter
+        toc: true
+        number-sections: true
+        number-depth: 3
+---
+
+
+
+
+```{r}
+#| include: false
+
+library(tidyverse)
+library(duckdb)
+
+con <- dbConnect(
+  duckdb(),
+  'C:/git/epa_water_stuff/data/tract_water_system_db.duckdb',
+  read_only = TRUE
+)
+
+
+contam_tract_level_out <-
+  read_csv(
+    'C:/git/epa_water_stuff/data/results/weighted_tract_level_ucmr_contam_wide.csv'
+  )
+
+arsenic_tthm_combo <-
+  read_csv(
+    'C:/git/epa_water_stuff/data/covariates/epa_6yr_review/arsenic_tthm_medians.csv'
+  )
+
+raw_pws_contam <-
+  read_csv(
+    'C:/git/epa_water_stuff/quarto/population_covered/data/pws_tract_contam_raw.csv'
+  )
+
+ct_pop_joe <-
+  read_csv(
+    'C:/git/epa_water_stuff/quarto/population_covered/data/tract_pop_joe.csv'
+  )
+
+tract_any_detect <-
+  read_csv(
+    'C:/git/epa_water_stuff/quarto/population_covered/data/tract_any_detect.csv'
+  )
+
+pws_tract_pop <-
+  read_csv(
+    'C:/git/epa_water_stuff/quarto/population_covered/data/pws_tract_pop.csv'
+  )
+
+
+cdc_arsenic <-
+  read_csv(
+    'C:/git/epa_water_stuff/data/covariates/cdc_env_tracking/arsenic_100429.csv'
+  ) |>
+  janitor::clean_names()
+
+cdc_tthm <-
+  read_csv(
+    'C:/git/epa_water_stuff/data/covariates/cdc_env_tracking/tthm_100353.csv'
+  ) |>
+  janitor::clean_names()
+```
+
+# Problem 
+
+Not every water system sampled during ucmr rounds 1 - 5 have a corresponding measurement taken for **arsenic** and **tthm**, 2 contaminants colled during the 2006 - 2011 6-year review and important covariates in our model. In some cases, this missigness is quite severe. 
+
+Other sources such as the CDC's Environmental Health Tracking Network, provides some county level information on these contaminants, but the missingness problem is even worse:
+
+```{r}
+#| collapse: true
+
+cdc_arsenic |>
+  count(state_fips) |>
+  arrange(state_fips)
+
+cdc_tthm |>
+  count(state_fips) |>
+  arrange(state_fips)
+```
+
+Crudely, we can see that only 28 states are represented here and only 8,879 total systems.  
+
+# Maybe Solution (?)
+
+Ultimately, we're interested in a tract level estimate of contaminant exposures. This means that we don't necessarily need a clean 1-to-1 match with every water system in the ucmr data. Rather, what I think we really need are estimates of **arsenic** and **tthm** that are available for as much of the estimated population served by a public water system as possible. Because there is missigness in the 6-year review data, we'll often fall pretty short of the full population estimate. In some states with very sparse data, we may not be able to make much of an estimate at all. 
+
+But the question is whether we have arsenic and tthm estimates that cover a sufficient amount of the population. More coverage should equal more confidence that we aren't underestimating the exposure (though we certainly will be given limitations in data)
+
+
+
+
+# Population Coverage for full re-weighted dataset
+
+There are two ways to think about this population coverage idea.
+
+1. We can think about the population served by a public water system (with corresponding arsenic and tthm data available) as a percentage of a tract's total population. 
+1. We can think about the population with corresponding arsenic and tthm data available as a percentage of the total population served by a water system.
+
+Below, I visualize each in turn and provide a table with the underlying data.
+
+```{r}
+#| label: 'clean up reference counts'
+#| include: false
+
+## =======================================================================
+# Reference tract and pop counts  ----
+## =======================================================================
+contig_tract_counts <-
+  tbl(con, 'tract10_5070') |>
+  summarise(
+    ref_pop = sum(value),
+    n = n(),
+    .by = st_fips
+  ) |>
+  collect()
+
+hi_tract_counts <- tbl(con, 'hi_tract10_3759') |>
+  summarise(
+    ref_pop = sum(value),
+    n = n(),
+    .by = st_fips
+  ) |>
+  collect()
+
+
+ak_tr_counts <- tbl(con, 'ak_tract10_3338') |>
+  summarise(
+    ref_pop = sum(value),
+    n = n(),
+    .by = st_fips
+  ) |>
+  collect()
+
+ref_tract_counts <-
+  rbind(contig_tract_counts, hi_tract_counts, ak_tr_counts) |>
+  rename(n_actual = n)
+```
+
+
+```{r}
+#| label: clean up water system tract counts 
+#| include: false
+
+#' Populations and wide contaminants from all of the ucmr rounds
+#' (filtered for a minimum 10% inclusion)
+contam_tract_counts <-
+  contam_tract_level_out |>
+  filter(pws_coverage_proportion >= .1) |>
+  mutate(
+    st_fips = substr(tract_geoid, 1, 2)
+  ) |>
+  summarise(
+    pop_in_pws = sum(ct_pop_pws),
+    tract_int_tot_pop = sum(tract_total_pop),
+    n_tracts_joined = n(),
+    .by = c(st_fips)
+  )
+
+#' ucmr round tracts with information about
+#' tthm & arsenic (SYR3)
+contam_tract_level_syr <-
+  raw_pws_contam |>
+  left_join(
+    arsenic_tthm_combo,
+    by = join_by(PWSID == pwsid)
+  ) |>
+  filter(!is.na(median_arsenic_syr3) & !is.na(median_tthm_syr3)) |>
+  select(-contains(c('_detectpws'))) |>
+  group_by(tract_geoid) |>
+  summarise(
+    across(
+      ends_with("_weighted"),
+      ~ round(sum(.x, na.rm = TRUE), 9),
+      .names = "{.col}_sum"
+    ),
+    .groups = "drop"
+  ) |>
+  left_join(ct_pop_joe, by = join_by(tract_geoid == GEOID)) |>
+  left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
+  left_join(tract_any_detect, by = join_by(tract_geoid)) |>
+  mutate(
+    pws_coverage_proportion = round(ct_pop_pws / tract_total_pop, 3)
+  ) |>
+  filter(pws_coverage_proportion >= .1)
+
+
+syr_contam_included <-
+  contam_tract_level_syr |>
+  mutate(
+    st_fips = substr(tract_geoid, 1, 2)
+  ) |>
+  summarise(
+    pop_in_pws_syr = sum(ct_pop_pws),
+    tract_int_tot_pop_syr = sum(tract_total_pop),
+    n_tracts_joined_syr = n(),
+    .by = c(st_fips)
+  )
+
+#' ucmr round tracts with information about
+#' tthm & arsenic (SYR4)
+contam_tract_level_syr4 <-
+  raw_pws_contam |>
+  left_join(
+    arsenic_tthm_combo,
+    by = join_by(PWSID == pwsid)
+  ) |>
+  filter(!is.na(median_arsenic_syr4) & !is.na(median_tthm_syr4)) |>
+  select(-contains(c('_detectpws'))) |>
+  group_by(tract_geoid) |>
+  summarise(
+    across(
+      ends_with("_weighted"),
+      ~ round(sum(.x, na.rm = TRUE), 9),
+      .names = "{.col}_sum"
+    ),
+    .groups = "drop"
+  ) |>
+  left_join(ct_pop_joe, by = join_by(tract_geoid == GEOID)) |>
+  left_join(pws_tract_pop, by = join_by(tract_geoid)) |>
+  left_join(tract_any_detect, by = join_by(tract_geoid)) |>
+  mutate(
+    pws_coverage_proportion = round(ct_pop_pws / tract_total_pop, 3)
+  ) |>
+  filter(pws_coverage_proportion >= .1)
+
+
+syr4_contam_included <-
+  contam_tract_level_syr4 |>
+  mutate(
+    st_fips = substr(tract_geoid, 1, 2)
+  ) |>
+  summarise(
+    pop_in_pws_syr4 = sum(ct_pop_pws),
+    tract_int_tot_pop_syr4 = sum(tract_total_pop),
+    n_tracts_joined_syr4 = n(),
+    .by = c(st_fips)
+  )
+```
+
+
+
+
+```{r}
+#| label: 'make tables and visuals for comparisons'
+#| include: false
+# Compare to reference categories ----------------------------------------
+
+state_fips_crosswalk <- data.frame(
+  fips = c(
+    "01",
+    "02",
+    "04",
+    "05",
+    "06",
+    "08",
+    "09",
+    "10",
+    "11",
+    "12",
+    "13",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51",
+    "53",
+    "54",
+    "55",
+    "56"
+  ),
+  state_abbr = c(
+    "AL",
+    "AK",
+    "AZ",
+    "AR",
+    "CA",
+    "CO",
+    "CT",
+    "DE",
+    "DC",
+    "FL",
+    "GA",
+    "HI",
+    "ID",
+    "IL",
+    "IN",
+    "IA",
+    "KS",
+    "KY",
+    "LA",
+    "ME",
+    "MD",
+    "MA",
+    "MI",
+    "MN",
+    "MS",
+    "MO",
+    "MT",
+    "NE",
+    "NV",
+    "NH",
+    "NJ",
+    "NM",
+    "NY",
+    "NC",
+    "ND",
+    "OH",
+    "OK",
+    "OR",
+    "PA",
+    "RI",
+    "SC",
+    "SD",
+    "TN",
+    "TX",
+    "UT",
+    "VT",
+    "VA",
+    "WA",
+    "WV",
+    "WI",
+    "WY"
+  ),
+  stringsAsFactors = FALSE
+)
+
+pop_coverage_comps <-
+  ref_tract_counts |>
+  left_join(contam_tract_counts) |>
+  left_join(syr_contam_included) |>
+  left_join(syr4_contam_included) |>
+  left_join(state_fips_crosswalk, by = join_by(st_fips == fips)) |>
+  arrange(st_fips)
+
+cov_comps <- pop_coverage_comps |>
+  mutate(
+    main_cov = pop_in_pws / ref_pop,
+    syr_cov = pop_in_pws_syr / ref_pop,
+    pws_cov = pop_in_pws_syr / pop_in_pws,
+    syr4_cov = pop_in_pws_syr4 / ref_pop,
+    pws_cov_syr4 = pop_in_pws_syr4 / pop_in_pws,
+    st = fct_reorder(state_abbr, main_cov) # order by main coverage
+  )
+
+# --- SYR3 plots ---
+base_comp_plot <-
+  ggplot(cov_comps) +
+  geom_segment(
+    aes(x = syr_cov, xend = main_cov, y = st, yend = st),
+    colour = "grey70",
+    na.rm = TRUE
+  ) +
+  geom_point(aes(syr_cov, st, colour = "SYR3"), size = 2, na.rm = TRUE) +
+  geom_point(aes(main_cov, st, colour = "Main"), size = 2) +
+  scale_colour_manual(
+    values = c(Main = "#1D9E75", SYR3 = "#D85A30"),
+    name = NULL
+  ) +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(
+    title = "SYR3 (2006-2011)",
+    x = "share of reference population captured",
+    y = NULL
+  ) +
+  theme_minimal()
+
+
+lolli_comps <- cov_comps |>
+  filter(!is.na(pws_cov)) |>
+  mutate(st_pws = fct_reorder(state_abbr, pws_cov))
+
+base_lolli_plot <-
+  ggplot(lolli_comps, aes(x = pws_cov, y = st_pws)) +
+  geom_segment(
+    aes(x = 0, xend = pws_cov, y = st_pws, yend = st_pws),
+    colour = "grey70",
+    na.rm = TRUE
+  ) +
+  geom_point(colour = "#D85A30", size = 2, na.rm = TRUE) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(
+    title = "SYR3 (2006-2011)",
+    x = "SYR3 coverage as share of Main coverage",
+    y = NULL
+  ) +
+  theme_minimal()
+
+# --- SYR4 plots ---
+base_comp_plot_syr4 <-
+  ggplot(cov_comps) +
+  geom_segment(
+    aes(x = syr4_cov, xend = main_cov, y = st, yend = st),
+    colour = "grey70",
+    na.rm = TRUE
+  ) +
+  geom_point(aes(syr4_cov, st, colour = "SYR4"), size = 2, na.rm = TRUE) +
+  geom_point(aes(main_cov, st, colour = "Main"), size = 2) +
+  scale_colour_manual(
+    values = c(Main = "#1D9E75", SYR4 = "#6A3D9A"),
+    name = NULL
+  ) +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(
+    title = "SYR4 (2012-2017)",
+    x = "share of reference population captured",
+    y = NULL
+  ) +
+  theme_minimal()
+
+
+lolli_comps_syr4 <- cov_comps |>
+  filter(!is.na(pws_cov_syr4)) |>
+  mutate(st_pws4 = fct_reorder(state_abbr, pws_cov_syr4))
+
+base_lolli_plot_syr4 <-
+  ggplot(lolli_comps_syr4, aes(x = pws_cov_syr4, y = st_pws4)) +
+  geom_segment(
+    aes(x = 0, xend = pws_cov_syr4, y = st_pws4, yend = st_pws4),
+    colour = "grey70",
+    na.rm = TRUE
+  ) +
+  geom_point(colour = "#6A3D9A", size = 2, na.rm = TRUE) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(
+    title = "SYR4 (2012-2017)",
+    x = "SYR4 coverage as share of Main coverage",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+
+
+## SYR3 (2006-2011)
+
+::: {.panel-tabset}
+
+### % of total tract population
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| out-width: '100%'
+#| echo: false
+
+base_comp_plot
+```
+
+Here, the [green]{style="color:#1D9E75"} color corresponds to the share of the total tract population served by a water system within each state. The [orange]{style="color:#D85A30"} color represents the share of the total tract population served by a water system with corresponding arsenic and tthm data available from the SYR3. The shortfall between the [green]{style="color:#1D9E75"} dot and 100% is the share of a tract's total population that falls outside community water systems. The shortfall between the [green]{style="color:#1D9E75"} and [orange]{style="color:#D85A30"} dots is the share of the population coverage we lose when we limit to only tracts with available tthm and arsenic data.
+
+
+In several states, the missingness problem is quite severe. In Maryland, Massachusetts, Delaware, and Georgia, for example, we have close to no coverage at all. In other places like Arkansas, Louisiana, and Kentucky, coverage is quite a lot closer.
+
+### % of population served by water system
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| out-width: '100%'
+#| echo: false
+
+base_lolli_plot
+```
+
+Here the [orange]{style="color:#D85A30"} color corresponds to the share of the population served by a water system with SYR3 arsenic and tthm data available. (This is maybe the more relevant metric).
+
+In most states, we see that more than 50% of the population served by a corresponding water system have arsenic and tthm data available.
+
+States that fall below that threshold include:
+
+1. MI
+2. GA
+3. DE
+4. MA
+5. WI
+6. MDN
+7. MS
+8. MD
+9. NH
+10. DC
+
+:::
+
+## SYR4 (2012-2017)
+
+::: {.panel-tabset}
+
+### % of total tract population
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| out-width: '100%'
+#| echo: false
+
+base_comp_plot_syr4
+```
+
+Here, the [green]{style="color:#1D9E75"} color corresponds to the share of the total tract population served by a water system within each state. The [purple]{style="color:#6A3D9A"} color represents the share of the total tract population served by a water system with corresponding arsenic and tthm data available from the SYR4. The shortfall between the [green]{style="color:#1D9E75"} dot and 100% is the share of a tract's total population that falls outside community water systems. The shortfall between the [green]{style="color:#1D9E75"} and [purple]{style="color:#6A3D9A"} dots is the share of the population coverage we lose when we limit to only tracts with available tthm and arsenic data.
+
+### % of population served by water system
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| out-width: '100%'
+#| echo: false
+
+base_lolli_plot_syr4
+```
+
+Here the [purple]{style="color:#6A3D9A"} color corresponds to the share of the population served by a water system with SYR4 arsenic and tthm data available.
+
+:::
+
+# UCMR Rounds 1 - 5 Population Coverage
+
+Of course, I think we'll have to run most analyses subset to the data with where a specific contaminant was detected. UCMR data is available for different water systems (and tracts) depending on the ucmr round and the contaminant itself.
+
+Below, I've reproduced the plots above with a reactable filter that allows users to see how population coverage changes depending on a specific contaminant value. 
+
+```{r}
+#| label: build per-round coverage for ojs
+#| include: false
+
+flag_names <- contam_tract_level_out |>
+  select(ends_with("_detectpws")) |>
+  names()
+
+flag_rounds <- tibble(flag = flag_names) |>
+  mutate(
+    stem = sub("_detectpws$", "", flag),
+    round = case_when(
+      grepl("^(dcpa|perchlorate)$", stem) ~ "UCMR1",
+      grepl("_35$", stem) ~ "UCMR3or5",
+      grepl("^(pf(bs|hpa|hxs|na|oa|os)_3|pfasany_3)$", stem) ~ "UCMR3",
+      grepl(
+        "^(HCFC22|Halon1011|dichloroethane11|dioxane14|chlorate|chromium6?|cobalt|molybdenum|strontium|vanadium)$",
+        stem
+      ) ~ "UCMR3",
+      grepl(
+        "^(haa5|haa6br|haa9|butanol1|germanium|manganese)$",
+        stem
+      ) ~ "UCMR4",
+      grepl("^(fts62|pfba|pfhxa|pfpea|lithium)$", stem) ~ "UCMR5",
+      grepl("^(pf(bs|hpa|hxs|na|oa|os)_5|pfasany_5t?)$", stem) ~ "UCMR5",
+      TRUE ~ "Other"
+    )
+  ) |>
+  select(flag, round)
+
+# Main arm: coverage by UCMR round (all covered tracts, not detection-filtered)
+main_by_round <- contam_tract_level_out |>
+  filter(pws_coverage_proportion >= .1) |>
+  mutate(st_fips = substr(tract_geoid, 1, 2)) |>
+  pivot_longer(all_of(flag_names), names_to = "flag", values_to = "hit") |>
+  filter(!is.na(hit)) |>
+  left_join(flag_rounds, by = "flag") |>
+  distinct(tract_geoid, round, .keep_all = TRUE) |>
+  summarise(
+    pop_in_pws = sum(ct_pop_pws, na.rm = TRUE),
+    .by = c(st_fips, round)
+  )
+
+# SYR3 arm
+syr_by_round <- contam_tract_level_syr |>
+  mutate(st_fips = substr(tract_geoid, 1, 2)) |>
+  pivot_longer(all_of(flag_names), names_to = "flag", values_to = "hit") |>
+  filter(!is.na(hit)) |>
+  left_join(flag_rounds, by = "flag") |>
+  distinct(tract_geoid, round, .keep_all = TRUE) |>
+  summarise(
+    pop_in_pws_syr = sum(ct_pop_pws, na.rm = TRUE),
+    .by = c(st_fips, round)
+  )
+
+# SYR4 arm
+syr4_by_round <- contam_tract_level_syr4 |>
+  mutate(st_fips = substr(tract_geoid, 1, 2)) |>
+  pivot_longer(all_of(flag_names), names_to = "flag", values_to = "hit") |>
+  filter(!is.na(hit)) |>
+  left_join(flag_rounds, by = "flag") |>
+  distinct(tract_geoid, round, .keep_all = TRUE) |>
+  summarise(
+    pop_in_pws_syr4 = sum(ct_pop_pws, na.rm = TRUE),
+    .by = c(st_fips, round)
+  )
+
+round_names <- sort(unique(flag_rounds$round))
+
+cov_by_round <- expand_grid(
+  st_fips = sort(unique(ref_tract_counts$st_fips)),
+  round = round_names
+) |>
+  left_join(main_by_round, by = join_by(st_fips, round)) |>
+  left_join(syr_by_round, by = join_by(st_fips, round)) |>
+  left_join(syr4_by_round, by = join_by(st_fips, round)) |>
+  left_join(
+    ref_tract_counts |> select(st_fips, ref_pop),
+    by = join_by(st_fips)
+  ) |>
+  left_join(state_fips_crosswalk, by = join_by(st_fips == fips)) |>
+  mutate(
+    pop_in_pws = coalesce(pop_in_pws, 0),
+    pop_in_pws_syr = coalesce(pop_in_pws_syr, 0),
+    pop_in_pws_syr4 = coalesce(pop_in_pws_syr4, 0),
+    main_cov = pop_in_pws / ref_pop,
+    syr_cov = pop_in_pws_syr / ref_pop,
+    syr4_cov = pop_in_pws_syr4 / ref_pop,
+    syr_cov_pws = if_else(
+      pop_in_pws > 0,
+      pop_in_pws_syr / pop_in_pws,
+      NA_real_
+    ),
+    syr4_cov_pws = if_else(
+      pop_in_pws > 0,
+      pop_in_pws_syr4 / pop_in_pws,
+      NA_real_
+    )
+  )
+
+state_order <- levels(cov_comps$st)
+
+ojs_define(cov_by_round = cov_by_round, state_order = state_order)
+```
+
+
+```{ojs}
+//| echo: false
+cov = transpose(cov_by_round)
+roundOrder = ["UCMR1", "UCMR3", "UCMR3or5", "UCMR4", "UCMR5", "Other"]
+roundLabel = ({
+  UCMR1: "UCMR 1", UCMR3: "UCMR 3", UCMR3or5: "UCMR 3 or 5",
+  UCMR4: "UCMR 4", UCMR5: "UCMR 5", Other: "Other"
+})
+availableRounds = roundOrder.filter(r => cov.some(d => d.round === r))
+```
+
+```{ojs}
+//| echo: false
+viewof pickedRound = Inputs.select(
+  availableRounds,
+  {label: "UCMR Round", format: r => roundLabel[r], value: availableRounds[0]}
+)
+
+viewof syrVersion = Inputs.radio(
+  new Map([["SYR3 (2006-2011)", "syr3"], ["SYR4 (2012-2017)", "syr4"]]),
+  {label: "SYR Version", value: "syr3"}
+)
+
+viewof denom = Inputs.radio(
+  new Map([
+    ["total tract population", "ref"],
+    ["SYR coverage as share of Main coverage", "pws"]
+  ]),
+  {label: "Denominator", value: "ref"}
+)
+```
+
+```{ojs}
+//| echo: false
+isSyr4 = syrVersion === "syr4"
+isRatio = denom === "pws"
+syrKey  = isSyr4 ? "syr4_cov" : "syr_cov"
+popSyrKey = isSyr4 ? "pop_in_pws_syr4" : "pop_in_pws_syr"
+pwsKey = isSyr4 ? "syr4_cov_pws" : "syr_cov_pws"
+syrLabel = isSyr4 ? "SYR4" : "SYR3"
+syrColor = isSyr4 ? "#6A3D9A" : "#D85A30"
+
+rows = cov.filter(d => d.round === pickedRound)
+
+ratioRows = rows.map(d => ({
+  state_abbr: d.state_abbr,
+  ratio: d[pwsKey]
+}))
+
+linkRows = rows.map(d => ({state_abbr: d.state_abbr, xMain: d.main_cov, xSyr: d[syrKey]}))
+pts = rows.flatMap(d => [
+  {st: d.state_abbr, arm: "Main",    cov: d.main_cov},
+  {st: d.state_abbr, arm: syrLabel,  cov: d[syrKey]}
+])
+
+xLabel = isRatio
+  ? syrLabel + " coverage as share of Main coverage"
+  : "share of total tract population captured"
+
+ratioMax = isRatio ? Math.max(1, d3.max(ratioRows, d => d.ratio) ?? 1) : 1
+
+Plot.plot({
+  marginLeft: 36,
+  height: 720,
+  x: {domain: [0, isRatio ? ratioMax : 1], tickFormat: ".0%", grid: true, label: xLabel},
+  y: {domain: Array.from(state_order).reverse(), label: null},
+  color: isRatio
+    ? undefined
+    : {domain: ["Main", syrLabel], range: ["#1D9E75", syrColor], legend: true},
+  marks: isRatio
+    ? [
+        Plot.ruleX([0]),
+        Plot.link(ratioRows, {x: 0, x2: "ratio", y: "state_abbr", stroke: "#cfcfcf"}),
+        Plot.dot(ratioRows,  {x: "ratio", y: "state_abbr", fill: syrColor, r: 4}),
+        Plot.tip(ratioRows,  Plot.pointer({x: "ratio", y: "state_abbr",
+          format: {x: false, y: false},
+          title: d => d.state_abbr + ": " + (d.ratio == null ? "—" : (d.ratio * 100).toFixed(1) + "%")}))
+      ]
+    : [
+        Plot.link(linkRows, {x: "xSyr", x2: "xMain", y: "state_abbr", stroke: "#cfcfcf"}),
+        Plot.dot(pts,       {x: "cov", y: "st", fill: "arm", r: 4}),
+        Plot.tip(pts,        Plot.pointer({x: "cov", y: "st",
+          format: {x: false, y: false, fill: false},
+          title: d => d.st + " (" + d.arm + "): " + (d.cov == null ? "—" : (d.cov * 100).toFixed(1) + "%")}))
+      ]
+})
+```
+
+```{ojs}
+//| echo: false
+Inputs.table(rows, {
+  columns: ["state_abbr", "ref_pop", "main_cov", syrKey, "pop_in_pws", popSyrKey],
+  header: {state_abbr: "State", ref_pop: "Total tract pop",
+           main_cov: "Main", [syrKey]: syrLabel,
+           pop_in_pws: "Pop (Main)", [popSyrKey]: "Pop (" + syrLabel + ")"},
+  sort: "main_cov", reverse: true,
+  format: {main_cov: x => x == null ? "—" : (x*100).toFixed(1) + "%",
+           [syrKey]:  x => x == null ? "—" : (x*100).toFixed(1) + "%",
+           ref_pop: x => x == null ? "—" : d3.format(",")(x)}
+})
+```
