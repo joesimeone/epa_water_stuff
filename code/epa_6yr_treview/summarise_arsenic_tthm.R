@@ -31,68 +31,129 @@ tthm_file <-
   )
 
 
+arsenic_syr4_file <-
+  read_csv(
+    here::here(
+      'data',
+      'source_data',
+      'epa_water',
+      'epa_6yr_review',
+      'arsenic_clean_syr4.csv'
+    )
+  )
+
+tthm_syr4_file <-
+  read_csv(
+    here::here(
+      'data',
+      'source_data',
+      'epa_water',
+      'epa_6yr_review',
+      'TTHM_clean_syr4.csv'
+    )
+  )
+
+
 ## =======================================================================
 # Derive Quick summaries for requested contaminants  -----
 ## =======================================================================
-arsenic_pwsid <-
-  arsenic_file |>
-  mutate(
-    detection_limit_value = if_else(
-      is.na(detection_limit_value),
-      0,
-      detection_limit_value
-    ),
-    value = if_else(is.na(value), (detection_limit_value / sqrt(2)), value)
-  ) |>
-  summarise(
-    min = min(value, na.rm = TRUE),
-    arsenic_median = median(value, na.rm = TRUE),
-    arsenic_detect_level_med = median(detection_limit_value, na.rm = TRUE),
-    mean = mean(value, na.rm = TRUE),
-    max = max(value, na.rm = TRUE),
-    sd = sd(value, na.rm = TRUE),
-    .by = pwsid
-  ) |>
-  mutate(
-    contam = 'arsenic',
-    arsenic_unit = 'mg_l',
-    arsenic_detect_unit = 'mg_l'
+
+summ_contams <- function(dat, contam_name, contam_unit) {
+  syr_dat <-
+    dat |>
+    mutate(
+      detection_limit_value = if_else(
+        is.na(detection_limit_value),
+        0,
+        detection_limit_value
+      ),
+      value = if_else(is.na(value), (detection_limit_value / sqrt(2)), value)
+    ) |>
+    summarise(
+      min = min(value, na.rm = TRUE),
+      median = median(value, na.rm = TRUE),
+      detect_level_med = median(detection_limit_value, na.rm = TRUE),
+      mean = mean(value, na.rm = TRUE),
+      max = max(value, na.rm = TRUE),
+      sd = sd(value, na.rm = TRUE),
+      .by = pwsid
+    ) |>
+    mutate(
+      contam = {{ contam_name }},
+      unit = contam_unit
+    )
+
+  return(syr_dat)
+}
+
+
+syr_dfs <-
+  list(
+    'arsenic_syr4' = arsenic_syr4_file,
+    'tthm_syr4' = tthm_syr4_file,
+    'arsenic_syr3' = arsenic_file,
+    'tthm_syr3' = tthm_file
   )
 
-
-tthm_pwsid <-
-  tthm_file |>
-  mutate(
-    detection_limit_value = if_else(
-      is.na(detection_limit_value),
-      0,
-      detection_limit_value
+#' Derive summary stats for each year of arsenic and contaminant data
+syr_pwsid_contam <-
+  map2(
+    syr_dfs,
+    list(
+      'arsenic',
+      'tthm',
+      'arsenic',
+      'tthm'
     ),
-    value = if_else(is.na(value), (detection_limit_value / sqrt(2)), value)
-  ) |>
-  summarise(
-    min = min(value, na.rm = TRUE),
-    tthm_median = median(value, na.rm = TRUE),
-    tthm_detect_level_med = median(detection_limit_value, na.rm = TRUE),
-    mean = mean(value, na.rm = TRUE),
-    max = max(value, na.rm = TRUE),
-    sd = sd(value, na.rm = TRUE),
-    .by = pwsid
-  ) |>
-  mutate(
-    contam = 'tthm',
-    tthm_unit = 'ug_l',
-    tthm_detect_unit = 'ug_l'
+    function(contam_dat, contam_str) {
+      summ_contams(
+        dat = contam_dat,
+        contam_name = contam_str,
+        contam_unit = 'ug_l'
+      )
+    }
   )
 
-#' Combine medians (request) into 2 columns, by pwsid ---------------------
+#' If a contaminant was detected at any point in time, add a dummy that says 1,
+#' else 0
+pwsid_detect_codes <-
+  map(
+    syr_dfs,
+    function(contam_dat) {
+      contam_dat |>
+        group_by(pwsid) |>
+        summarise(
+          detect_dummy = if_else(any(detect == 1), 1, 0)
+        )
+    }
+  )
 
-arsenic_tthm_combo <-
-  arsenic_pwsid |>
-  select(pwsid, arsenic_median, arsenic_unit, arsenic_detect_level_med) |>
-  full_join(
-    tthm_pwsid |> select(pwsid, tthm_median, tthm_unit, tthm_detect_level_med),
-    by = c('pwsid')
+#' Add list name to dummy columns so they don't collide
+pwsid_detect_codes_fin <-
+  pwsid_detect_codes |>
+  imap(\(df, nm) {
+    df |>
+      rename(!!sym(str_glue('detect_dummy_{nm}')) := detect_dummy)
+  }) |>
+  reduce(full_join, by = "pwsid")
+
+#' Add list name to contaminants summary data so they don't collide
+syr_pwsid_contam_fin <-
+  syr_pwsid_contam |>
+  imap(\(df, nm) {
+    df |>
+      select(-contam, -unit) |>
+      rename_with(\(col) paste0(col, "_", nm), .cols = -pwsid)
+  }) |>
+  reduce(full_join, by = "pwsid")
+
+
+#' Combine contaminants medians and detection flags into one data frame.
+pwsid_syr_fin <-
+  syr_pwsid_contam_fin |>
+  left_join(
+    pwsid_detect_codes_fin,
+    by = join_by(pwsid)
   )
 
 ## =======================================================================
@@ -100,6 +161,6 @@ arsenic_tthm_combo <-
 ## =======================================================================
 
 write_csv(
-  arsenic_tthm_combo,
+  pwsid_syr_fin,
   'data/covariates/epa_6yr_review/arsenic_tthm_medians.csv'
 )
