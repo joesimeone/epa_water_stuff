@@ -156,6 +156,48 @@ pwsid_syr_fin <-
     by = join_by(pwsid)
   )
 
+
+## =======================================================================
+# Stich SYR Rounds  ----
+## =======================================================================
+#' Simple rules:
+#'   1. If both medians for arsenic of TTHM are available take a colwise
+#'      median.
+#'   2. If only avaialble during 1 SYR round, take the non-missing value
+#' =======================================================================
+
+arsenic_cols <- c("median_arsenic_syr3", "median_arsenic_syr4")
+tthm_cols <- c("median_tthm_syr3", "median_tthm_syr4")
+
+pwsid_syr_fin <-
+  pwsid_syr_fin |>
+  rowwise() |>
+  mutate(
+    arsenic_fin_median = median(c_across(all_of(arsenic_cols)), na.rm = TRUE),
+    tthm_fin_median = median(c_across(all_of(tthm_cols)), na.rm = TRUE),
+  ) |>
+  ungroup()
+
+
+pwsid_syr_fin <-
+  pwsid_syr_fin |>
+  select(pwsid, arsenic_fin_median, tthm_fin_median, contains(c('detect'))) |>
+  mutate(
+    arsenic_detect_flag = coalesce(
+      detect_dummy_arsenic_syr3,
+      detect_dummy_arsenic_syr4
+    ),
+    tthm_detect_flag = coalesce(detect_dummy_tthm_syr3, detect_dummy_tthm_syr4)
+  ) |>
+  select(
+    pwsid,
+    arsenic_fin_median,
+    tthm_fin_median,
+    arsenic_detect_flag,
+    tthm_detect_flag
+  )
+
+
 ## =======================================================================
 # Write summarized results  ----
 ## =======================================================================
