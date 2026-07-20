@@ -121,3 +121,5 @@ code/scribbles/show_populaton_comps.R
 code/scribbles/ugly_checks_missing_sys_dat.R
 quarto/population_covered/to_claude.md
 quarto/population_covered/hit_plot_old_scraps.R
+.claude/settings.local.json
+quarto/pwsid_helper/.vdoc.a2d472ac-026f-4748-adfb-cd16627aa3d3.r
