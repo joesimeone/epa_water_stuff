@@ -281,8 +281,8 @@ contam_tract_level <-
   summarise(
     across(
       ends_with("_weighted"),
-      ~ round(sum(.x, na.rm = TRUE), 9),
-      .names = "{.col}_sum"
+      ~ if_else(all(is.na(.x)), NA_real_, round(sum(.x, na.rm = TRUE), 9)),
+      .names = "{.col}"
     ),
     .groups = "drop"
   ) |>
@@ -291,6 +291,9 @@ contam_tract_level <-
   left_join(tract_any_detect, by = join_by(tract_geoid)) |>
   mutate(
     pws_coverage_proportion = round(ct_pop_pws / tract_total_pop, 3)
+  ) |>
+  rename(
+    n_pws_ucmr = n_pws
   )
 
 #' Capture how many systems we'll exclude with coverage flag threshold
