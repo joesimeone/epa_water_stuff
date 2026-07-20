@@ -53,7 +53,10 @@ tthm_syr4_file <-
     )
   )
 
-
+arsenic_syr2_file <-
+  read_csv(
+    'data/source_data/epa_water/epa_6yr_review/syr2_arsenic.csv'
+  )
 ## =======================================================================
 # Derive Quick summaries for requested contaminants  -----
 ## =======================================================================
@@ -156,6 +159,13 @@ pwsid_syr_fin <-
     by = join_by(pwsid)
   )
 
+pwsid_syr_fin <-
+  pwsid_syr_fin |>
+  full_join(
+    arsenic_syr2_file |>
+      rename(detect_dummy_arsenic_syr2 = arsenic_detect_flag_syr2),
+    by = join_by(pwsid == PWSID)
+  )
 
 ## =======================================================================
 # Stich SYR Rounds  ----
@@ -166,8 +176,15 @@ pwsid_syr_fin <-
 #'   2. If only avaialble during 1 SYR round, take the non-missing value
 #' =======================================================================
 
-arsenic_cols <- c("median_arsenic_syr3", "median_arsenic_syr4")
+arsenic_cols <- c(
+  "median_arsenic_syr2",
+  "median_arsenic_syr3",
+  "median_arsenic_syr4"
+)
 tthm_cols <- c("median_tthm_syr3", "median_tthm_syr4")
+contaminants <- c("arsenic", "tthm")
+syrs <- c("syr2", "syr3", "syr4")
+
 
 pwsid_syr_fin <-
   pwsid_syr_fin |>
@@ -178,17 +195,23 @@ pwsid_syr_fin <-
   ) |>
   ungroup()
 
+for (contam in contaminants) {
+  cols <- paste0("detect_dummy_", contam, "_", syrs)
+  flag <- paste0(contam, "_detect_flag")
+
+  pwsid_syr_fin <- pwsid_syr_fin |>
+    rowwise() |>
+    mutate(
+      !!flag := {
+        vals <- c_across(any_of(cols))
+        if (all(is.na(vals))) NA_real_ else max(vals, na.rm = TRUE)
+      }
+    ) |>
+    ungroup()
+}
 
 pwsid_syr_fin <-
   pwsid_syr_fin |>
-  select(pwsid, arsenic_fin_median, tthm_fin_median, contains(c('detect'))) |>
-  mutate(
-    arsenic_detect_flag = coalesce(
-      detect_dummy_arsenic_syr3,
-      detect_dummy_arsenic_syr4
-    ),
-    tthm_detect_flag = coalesce(detect_dummy_tthm_syr3, detect_dummy_tthm_syr4)
-  ) |>
   select(
     pwsid,
     arsenic_fin_median,
