@@ -1,0 +1,177 @@
+variable,type,description,source,geography
+tract_geoid,character (11-digit FIPS),2010 Census tract identifier,Census / derived,tract
+dcpa_medpws_weighted,numeric,Population-weighted median DCPA (pesticide) concentration across PWS samples,UCMR (script 03),tract
+dcpa_maxpws_weighted,numeric,Population-weighted max DCPA concentration across PWS samples,UCMR (script 03),tract
+perchlorate_medpws_weighted,numeric,Population-weighted median perchlorate concentration,UCMR (script 03),tract
+perchlorate_maxpws_weighted,numeric,Population-weighted max perchlorate concentration,UCMR (script 03),tract
+dichloroethane11_medpws_weighted,numeric,Population-weighted median 1-1-dichloroethane (VOC) concentration,UCMR (script 03),tract
+dichloroethane11_maxpws_weighted,numeric,Population-weighted max 1-1-dichloroethane concentration,UCMR (script 03),tract
+dioxane14_medpws_weighted,numeric,Population-weighted median 1-4-dioxane (solvent) concentration,UCMR (script 03),tract
+dioxane14_maxpws_weighted,numeric,Population-weighted max 1-4-dioxane concentration,UCMR (script 03),tract
+hcfc22_medpws_weighted,numeric,Population-weighted median HCFC-22 (refrigerant/VOC) concentration,UCMR (script 03),tract
+hcfc22_maxpws_weighted,numeric,Population-weighted max HCFC-22 concentration,UCMR (script 03),tract
+halon1011_medpws_weighted,numeric,Population-weighted median Halon 1011 (fire suppressant/VOC) concentration,UCMR (script 03),tract
+halon1011_maxpws_weighted,numeric,Population-weighted max Halon 1011 concentration,UCMR (script 03),tract
+pfbs_3_medpws_weighted,numeric,Population-weighted median PFBS (UCMR3) concentration,UCMR (script 03),tract
+pfbs_3_maxpws_weighted,numeric,Population-weighted max PFBS (UCMR3) concentration,UCMR (script 03),tract
+pfhpa_3_medpws_weighted,numeric,Population-weighted median PFHpA (UCMR3) concentration,UCMR (script 03),tract
+pfhpa_3_maxpws_weighted,numeric,Population-weighted max PFHpA (UCMR3) concentration,UCMR (script 03),tract
+pfhxs_3_medpws_weighted,numeric,Population-weighted median PFHxS (UCMR3) concentration,UCMR (script 03),tract
+pfhxs_3_maxpws_weighted,numeric,Population-weighted max PFHxS (UCMR3) concentration,UCMR (script 03),tract
+pfna_3_medpws_weighted,numeric,Population-weighted median PFNA (UCMR3) concentration,UCMR (script 03),tract
+pfna_3_maxpws_weighted,numeric,Population-weighted max PFNA (UCMR3) concentration,UCMR (script 03),tract
+pfoa_3_medpws_weighted,numeric,Population-weighted median PFOA (UCMR3) concentration,UCMR (script 03),tract
+pfoa_3_maxpws_weighted,numeric,Population-weighted max PFOA (UCMR3) concentration,UCMR (script 03),tract
+pfos_3_medpws_weighted,numeric,Population-weighted median PFOS (UCMR3) concentration,UCMR (script 03),tract
+pfos_3_maxpws_weighted,numeric,Population-weighted max PFOS (UCMR3) concentration,UCMR (script 03),tract
+pfasany_3_sumpwsmed_weighted,numeric,Population-weighted sum of all PFAS medians (UCMR3),UCMR (script 03),tract
+pfasany_3_sumpwsmax_weighted,numeric,Population-weighted sum of all PFAS maxes (UCMR3),UCMR (script 03),tract
+pfospfoa_3_sumpwsmax_weighted,numeric,Population-weighted sum of PFOS+PFOA max values (UCMR3),UCMR (script 03),tract
+pfba_medpws_weighted,numeric,Population-weighted median PFBA concentration,UCMR (script 03),tract
+pfba_maxpws_weighted,numeric,Population-weighted max PFBA concentration,UCMR (script 03),tract
+pfbs_5_medpws_weighted,numeric,Population-weighted median PFBS (UCMR5) concentration,UCMR (script 03),tract
+pfbs_5_maxpws_weighted,numeric,Population-weighted max PFBS (UCMR5) concentration,UCMR (script 03),tract
+pfhpa_5_medpws_weighted,numeric,Population-weighted median PFHpA (UCMR5) concentration,UCMR (script 03),tract
+pfhpa_5_maxpws_weighted,numeric,Population-weighted max PFHpA (UCMR5) concentration,UCMR (script 03),tract
+pfhxa_medpws_weighted,numeric,Population-weighted median PFHxA concentration,UCMR (script 03),tract
+pfhxa_maxpws_weighted,numeric,Population-weighted max PFHxA concentration,UCMR (script 03),tract
+pfhxs_5_medpws_weighted,numeric,Population-weighted median PFHxS (UCMR5) concentration,UCMR (script 03),tract
+pfhxs_5_maxpws_weighted,numeric,Population-weighted max PFHxS (UCMR5) concentration,UCMR (script 03),tract
+pfna_5_medpws_weighted,numeric,Population-weighted median PFNA (UCMR5) concentration,UCMR (script 03),tract
+pfna_5_maxpws_weighted,numeric,Population-weighted max PFNA (UCMR5) concentration,UCMR (script 03),tract
+pfoa_5_medpws_weighted,numeric,Population-weighted median PFOA (UCMR5) concentration,UCMR (script 03),tract
+pfoa_5_maxpws_weighted,numeric,Population-weighted max PFOA (UCMR5) concentration,UCMR (script 03),tract
+pfos_5_medpws_weighted,numeric,Population-weighted median PFOS (UCMR5) concentration,UCMR (script 03),tract
+pfos_5_maxpws_weighted,numeric,Population-weighted max PFOS (UCMR5) concentration,UCMR (script 03),tract
+pfpea_medpws_weighted,numeric,Population-weighted median PFPeA concentration,UCMR (script 03),tract
+pfpea_maxpws_weighted,numeric,Population-weighted max PFPeA concentration,UCMR (script 03),tract
+pfasany_5t_sumpwsmed_weighted,numeric,Population-weighted sum of all PFAS medians (UCMR5 total),UCMR (script 03),tract
+pfasany_5t_sumpwsmax_weighted,numeric,Population-weighted sum of all PFAS maxes (UCMR5 total),UCMR (script 03),tract
+pfasany_5_sumpwsmed_weighted,numeric,Population-weighted sum of all PFAS medians (UCMR5),UCMR (script 03),tract
+pfasany_5_sumpwsmax_weighted,numeric,Population-weighted sum of all PFAS maxes (UCMR5),UCMR (script 03),tract
+pfospfoa_5_sumpwsmax_weighted,numeric,Population-weighted sum of PFOS+PFOA max values (UCMR5),UCMR (script 03),tract
+pfoa_35_maxpws_weighted,numeric,Population-weighted max PFOA (harmonized UCMR 3+5),UCMR (script 03),tract
+pfoa_35_medpws_weighted,numeric,Population-weighted median PFOA (harmonized UCMR 3+5),UCMR (script 03),tract
+pfos_35_maxpws_weighted,numeric,Population-weighted max PFOS (harmonized UCMR 3+5),UCMR (script 03),tract
+pfos_35_medpws_weighted,numeric,Population-weighted median PFOS (harmonized UCMR 3+5),UCMR (script 03),tract
+pfna_35_maxpws_weighted,numeric,Population-weighted max PFNA (harmonized UCMR 3+5),UCMR (script 03),tract
+pfna_35_medpws_weighted,numeric,Population-weighted median PFNA (harmonized UCMR 3+5),UCMR (script 03),tract
+pfhxs_35_maxpws_weighted,numeric,Population-weighted max PFHxS (harmonized UCMR 3+5),UCMR (script 03),tract
+pfhxs_35_medpws_weighted,numeric,Population-weighted median PFHxS (harmonized UCMR 3+5),UCMR (script 03),tract
+pfbs_35_maxpws_weighted,numeric,Population-weighted max PFBS (harmonized UCMR 3+5),UCMR (script 03),tract
+pfbs_35_medpws_weighted,numeric,Population-weighted median PFBS (harmonized UCMR 3+5),UCMR (script 03),tract
+pfhpa_35_maxpws_weighted,numeric,Population-weighted max PFHpA (harmonized UCMR 3+5),UCMR (script 03),tract
+pfhpa_35_medpws_weighted,numeric,Population-weighted median PFHpA (harmonized UCMR 3+5),UCMR (script 03),tract
+chlorate_medpws_weighted,numeric,Population-weighted median chlorate (DBP) concentration,UCMR (script 03),tract
+chlorate_maxpws_weighted,numeric,Population-weighted max chlorate concentration,UCMR (script 03),tract
+chromium_medpws_weighted,numeric,Population-weighted median total chromium concentration,UCMR (script 03),tract
+chromium_maxpws_weighted,numeric,Population-weighted max total chromium concentration,UCMR (script 03),tract
+chromium6_medpws_weighted,numeric,Population-weighted median hexavalent chromium concentration,UCMR (script 03),tract
+chromium6_maxpws_weighted,numeric,Population-weighted max hexavalent chromium concentration,UCMR (script 03),tract
+cobalt_medpws_weighted,numeric,Population-weighted median cobalt concentration,UCMR (script 03),tract
+cobalt_maxpws_weighted,numeric,Population-weighted max cobalt concentration,UCMR (script 03),tract
+molybdenum_medpws_weighted,numeric,Population-weighted median molybdenum concentration,UCMR (script 03),tract
+molybdenum_maxpws_weighted,numeric,Population-weighted max molybdenum concentration,UCMR (script 03),tract
+strontium_medpws_weighted,numeric,Population-weighted median strontium concentration,UCMR (script 03),tract
+strontium_maxpws_weighted,numeric,Population-weighted max strontium concentration,UCMR (script 03),tract
+vanadium_medpws_weighted,numeric,Population-weighted median vanadium concentration,UCMR (script 03),tract
+vanadium_maxpws_weighted,numeric,Population-weighted max vanadium concentration,UCMR (script 03),tract
+fts62_medpws_weighted,numeric,Population-weighted median 6:2 FTS (fluorotelomer sulfonate) concentration,UCMR (script 03),tract
+fts62_maxpws_weighted,numeric,Population-weighted max 6:2 FTS concentration,UCMR (script 03),tract
+lithium_medpws_weighted,numeric,Population-weighted median lithium concentration,UCMR (script 03),tract
+lithium_maxpws_weighted,numeric,Population-weighted max lithium concentration,UCMR (script 03),tract
+haa5_medpws_weighted,numeric,Population-weighted median HAA5 (haloacetic acids group of 5) concentration,UCMR (script 03),tract
+haa5_maxpws_weighted,numeric,Population-weighted max HAA5 concentration,UCMR (script 03),tract
+haa6br_medpws_weighted,numeric,Population-weighted median HAA6Br (brominated haloacetic acids) concentration,UCMR (script 03),tract
+haa6br_maxpws_weighted,numeric,Population-weighted max HAA6Br concentration,UCMR (script 03),tract
+haa9_medpws_weighted,numeric,Population-weighted median HAA9 (haloacetic acids group of 9) concentration,UCMR (script 03),tract
+haa9_maxpws_weighted,numeric,Population-weighted max HAA9 concentration,UCMR (script 03),tract
+butanol1_medpws_weighted,numeric,Population-weighted median 1-butanol concentration,UCMR (script 03),tract
+butanol1_maxpws_weighted,numeric,Population-weighted max 1-butanol concentration,UCMR (script 03),tract
+germanium_medpws_weighted,numeric,Population-weighted median germanium concentration,UCMR (script 03),tract
+germanium_maxpws_weighted,numeric,Population-weighted max germanium concentration,UCMR (script 03),tract
+manganese_medpws_weighted,numeric,Population-weighted median manganese concentration,UCMR (script 03),tract
+manganese_maxpws_weighted,numeric,Population-weighted max manganese concentration,UCMR (script 03),tract
+tract_total_pop,numeric,Total tract population from 2010 Census,Census / DuckDB (script 03),tract
+n_pws_ucmr,integer,Number of UCMR-participating public water systems serving this tract,Derived (script 03),tract
+ct_pop_pws,numeric,Estimated total tract population served by any UCMR PWS (via areal interpolation),Derived (script 03),tract
+dcpa_detectpws,binary (0/1/NA),Any PWS serving the tract had a DCPA detection,UCMR (script 03),tract
+perchlorate_detectpws,binary (0/1/NA),Any PWS serving the tract had a perchlorate detection,UCMR (script 03),tract
+dichloroethane11_detectpws,binary (0/1/NA),Any PWS serving the tract had a 1-1-dichloroethane detection,UCMR (script 03),tract
+dioxane14_detectpws,binary (0/1/NA),Any PWS serving the tract had a 1-4-dioxane detection,UCMR (script 03),tract
+hcfc22_detectpws,binary (0/1/NA),Any PWS serving the tract had an HCFC-22 detection,UCMR (script 03),tract
+halon1011_detectpws,binary (0/1/NA),Any PWS serving the tract had a Halon 1011 detection,UCMR (script 03),tract
+pfbs_3_detectpws,binary (0/1/NA),Any PWS had PFBS detection (UCMR3),UCMR (script 03),tract
+pfhpa_3_detectpws,binary (0/1/NA),Any PWS had PFHpA detection (UCMR3),UCMR (script 03),tract
+pfhxs_3_detectpws,binary (0/1/NA),Any PWS had PFHxS detection (UCMR3),UCMR (script 03),tract
+pfna_3_detectpws,binary (0/1/NA),Any PWS had PFNA detection (UCMR3),UCMR (script 03),tract
+pfoa_3_detectpws,binary (0/1/NA),Any PWS had PFOA detection (UCMR3),UCMR (script 03),tract
+pfos_3_detectpws,binary (0/1/NA),Any PWS had PFOS detection (UCMR3),UCMR (script 03),tract
+chlorate_detectpws,binary (0/1/NA),Any PWS had chlorate detection,UCMR (script 03),tract
+chromium_detectpws,binary (0/1/NA),Any PWS had total chromium detection,UCMR (script 03),tract
+chromium6_detectpws,binary (0/1/NA),Any PWS had hexavalent chromium detection,UCMR (script 03),tract
+cobalt_detectpws,binary (0/1/NA),Any PWS had cobalt detection,UCMR (script 03),tract
+molybdenum_detectpws,binary (0/1/NA),Any PWS had molybdenum detection,UCMR (script 03),tract
+strontium_detectpws,binary (0/1/NA),Any PWS had strontium detection,UCMR (script 03),tract
+vanadium_detectpws,binary (0/1/NA),Any PWS had vanadium detection,UCMR (script 03),tract
+pfasany_3_detectpws,binary (0/1/NA),Any PWS had any PFAS detection (UCMR3),UCMR (script 03),tract
+fts62_detectpws,binary (0/1/NA),Any PWS had 6:2 FTS detection,UCMR (script 03),tract
+pfba_detectpws,binary (0/1/NA),Any PWS had PFBA detection,UCMR (script 03),tract
+pfbs_5_detectpws,binary (0/1/NA),Any PWS had PFBS detection (UCMR5),UCMR (script 03),tract
+pfhpa_5_detectpws,binary (0/1/NA),Any PWS had PFHpA detection (UCMR5),UCMR (script 03),tract
+pfhxa_detectpws,binary (0/1/NA),Any PWS had PFHxA detection,UCMR (script 03),tract
+pfhxs_5_detectpws,binary (0/1/NA),Any PWS had PFHxS detection (UCMR5),UCMR (script 03),tract
+pfna_5_detectpws,binary (0/1/NA),Any PWS had PFNA detection (UCMR5),UCMR (script 03),tract
+pfoa_5_detectpws,binary (0/1/NA),Any PWS had PFOA detection (UCMR5),UCMR (script 03),tract
+pfos_5_detectpws,binary (0/1/NA),Any PWS had PFOS detection (UCMR5),UCMR (script 03),tract
+pfpea_detectpws,binary (0/1/NA),Any PWS had PFPeA detection,UCMR (script 03),tract
+lithium_detectpws,binary (0/1/NA),Any PWS had lithium detection,UCMR (script 03),tract
+pfasany_5t_detectpws,binary (0/1/NA),Any PWS had any PFAS detection (UCMR5 total),UCMR (script 03),tract
+pfasany_5_detectpws,binary (0/1/NA),Any PWS had any PFAS detection (UCMR5),UCMR (script 03),tract
+pfoa_35_detectpws,binary (0/1/NA),Any PWS had PFOA detection (harmonized UCMR 3+5),UCMR (script 03),tract
+pfos_35_detectpws,binary (0/1/NA),Any PWS had PFOS detection (harmonized UCMR 3+5),UCMR (script 03),tract
+pfna_35_detectpws,binary (0/1/NA),Any PWS had PFNA detection (harmonized UCMR 3+5),UCMR (script 03),tract
+pfhxs_35_detectpws,binary (0/1/NA),Any PWS had PFHxS detection (harmonized UCMR 3+5),UCMR (script 03),tract
+pfbs_35_detectpws,binary (0/1/NA),Any PWS had PFBS detection (harmonized UCMR 3+5),UCMR (script 03),tract
+pfhpa_35_detectpws,binary (0/1/NA),Any PWS had PFHpA detection (harmonized UCMR 3+5),UCMR (script 03),tract
+haa5_detectpws,binary (0/1/NA),Any PWS had HAA5 detection,UCMR (script 03),tract
+haa6br_detectpws,binary (0/1/NA),Any PWS had HAA6Br detection,UCMR (script 03),tract
+haa9_detectpws,binary (0/1/NA),Any PWS had HAA9 detection,UCMR (script 03),tract
+butanol1_detectpws,binary (0/1/NA),Any PWS had 1-butanol detection,UCMR (script 03),tract
+germanium_detectpws,binary (0/1/NA),Any PWS had germanium detection,UCMR (script 03),tract
+manganese_detectpws,binary (0/1/NA),Any PWS had manganese detection,UCMR (script 03),tract
+pws_coverage_proportion,numeric (0-1),Proportion of tract total population served by UCMR PWS (ct_pop_pws / tract_total_pop); tracts <0.5 excluded,Derived (script 03),tract
+prop_no_pws,numeric (0-1),Estimated proportion of tract population NOT served by any UCMR PWS (1 - pws_coverage_proportion),Derived (script 03),tract
+name,character,Census tract name from ACS (e.g. 'Census Tract 201 Autauga County Alabama'),ACS 5-year 2010 via tidycensus,tract
+race_total_e,integer,Total population (ACS estimate; denominator for race shares),ACS 5-year 2010 (B03002_001),tract
+race_whitenh,numeric (0-1),Proportion non-Hispanic White,ACS 5-year 2010 (B03002_003),tract
+race_blacknh,numeric (0-1),Proportion non-Hispanic Black,ACS 5-year 2010 (B03002_004),tract
+race_asiannh,numeric (0-1),Proportion non-Hispanic Asian,ACS 5-year 2010 (B03002_006),tract
+race_hisp,numeric (0-1),Proportion Hispanic/Latino,ACS 5-year 2010 (B03002_012),tract
+race_multiplenh,numeric (0-1),Proportion non-Hispanic multiracial,ACS 5-year 2010 (B03002_009),tract
+race_othernh,numeric (0-1),Proportion non-Hispanic other (AIAN + NHPI + other),ACS 5-year 2010 (B03002_005+007+008),tract
+pov_allage,numeric (0-1),Poverty rate all ages (below poverty / total),ACS 5-year 2010 (B17001),tract
+medhhinc,numeric,Median household income (dollars),ACS 5-year 2010 (B19013_001),tract
+pct_hsplus,numeric (0-1),Proportion of population 25+ with high school degree or higher,ACS 5-year 2010 (B15002),tract
+aland10,numeric,Land area in square meters (from TIGER/Line),Census TIGER 2010 via tigris,tract
+pop_density_sqkm,numeric,Population density per square kilometer (race_total_e / aland10 in km2),Derived from ACS + TIGER,tract
+tree_can,numeric,Mean tree canopy cover percentage (zonal mean of NLCD pixels within tract),MRLC NLCD Tree Canopy 2008,tract
+gisjoin,character,NHGIS-style tract identifier from NDVI source data,GEE / NHGIS,tract
+ndvi_max,numeric,Maximum growing-season NDVI value (water-masked),Landsat 5/7 via GEE 2008,tract
+ndvi_mean,numeric,Mean growing-season NDVI value (water-masked),Landsat 5/7 via GEE 2008,tract
+ndvi_median,numeric,Median growing-season NDVI value (water-masked),Landsat 5/7 via GEE 2008,tract
+nobs_mean,numeric,Mean number of valid Landsat observations per pixel within tract,Landsat 5/7 via GEE 2008,tract
+mean_pm25_value,numeric,Annual mean PM2.5 concentration (ug/m3) from EPA downscaler model,EPA RSIG Downscaler 2008,tract
+mean_pm25_sd,numeric,Annual mean standard error of PM2.5 downscaler estimate (ug/m3),EPA RSIG Downscaler 2008,tract
+arsenic_fin_median_weighted,numeric,Population-weighted median arsenic concentration from EPA 6-year review (SYR 2-4),EPA Six-Year Review (code/epa_6yr_treview/),tract
+tthm_fin_median_weighted,numeric,Population-weighted median TTHM concentration from EPA 6-year review (SYR 2-4),EPA Six-Year Review (code/epa_6yr_treview/),tract
+n_pws_syr,integer,Number of 6-year-review PWS serving the tract,Derived (epa_6yr_treview scripts),tract
+ct_pop_pws_syr,numeric,Estimated tract population served by 6-year-review PWS,Derived (epa_6yr_treview scripts),tract
+arsenic_detect_flag,binary (0/1/NA),Any 6-year-review PWS had arsenic detection,EPA Six-Year Review,tract
+tthm_detect_flag,binary (0/1/NA),Any 6-year-review PWS had TTHM detection,EPA Six-Year Review,tract
+co_geoid,character (5-digit FIPS),County FIPS code (derived from first 5 chars of tract_geoid),Derived (script 05),county
+county_name_clean,character,County name from smoking prevalence source data,Dwyer-Lindgren et al.,county
+statefp10,character (2-digit FIPS),State FIPS code from smoking prevalence source,Dwyer-Lindgren et al.,county
+smoking_prev,numeric,Modeled total smoking prevalence (%) for the county in 2008,Dwyer-Lindgren et al. (PMC3987818),county
+smoking_prev_lower,numeric,Lower bound of smoking prevalence confidence interval,Dwyer-Lindgren et al.,county
+smoking_prev_upper,numeric,Upper bound of smoking prevalence confidence interval,Dwyer-Lindgren et al.,county
