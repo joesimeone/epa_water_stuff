@@ -248,8 +248,23 @@ ucmr_exposure_fin <-
   left_join(covars_fin, by = join_by(tract_geoid)) |>
   janitor::clean_names()
 
+ucmr_5_patterns <-
+  c('fts62', 'pfba', 'pfhxa', 'pfpea')
+
+ucmr_5_regex <- str_c("(", str_c(ucmr_5_patterns, collapse = "|"), ")")
+
+ucmr_exposure_fin <-
+  ucmr_exposure_fin |>
+  rename_with(
+    \(x) str_replace(x, ucmr_5_regex, "\\1_5"),
+    .cols = matches(ucmr_5_regex)
+  ) |>
+  rename_with(\(x) str_replace(x, 'pws', 'cws'), .cols = everything())
+
+
 # 5 export ---------------------------------------------------------------
 write_csv(
   ucmr_exposure_fin,
-  'data/results/ucmr_tract_exposure_covariates.csv'
+  'data/results/ucmr_tract_exposure_covariates.csv',
+  na = ""
 )

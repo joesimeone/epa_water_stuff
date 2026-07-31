@@ -27,6 +27,16 @@ proc import
     guessingrows = max;
 run;
 
+
+data ucmr_tract_fin;
+    set ucmr_tract_fin;
+    geoid_c = put(tract_geoid, z11.);  /* z11. pads to 11 digits with leading zeros */
+    drop tract_geoid;
+    rename geoid_c = tract_geoid;
+run;
+
+proc contents data = ucmr_tract_fin; run;
+
 /* Check what we got */
 proc contents data = work.ucmr_contam;
 run;
@@ -51,5 +61,7 @@ run;
 
 
 libname outlib clear;
+
+proc print data = ucmr_tract_fin (obs = 100); run;
 
 
