@@ -106,10 +106,16 @@ ct_pop_joe <-
 raw_wgts <-
   tbl(con, 'weighting.us_bg10_group_pws_v3') |>
   filter(PWSID %in% pwsid_w_contam) |>
+  group_by(GEOID, PWSID) |>
+  summarise(
+    overlap_area = sum(overlap_area),
+    value = first(value),
+    block10_group_5070_area = first(block10_group_5070_area),
+    .groups = "drop"
+  ) |>
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
-    wgt = overlap_area / block10_group_5070_area,
-    bg_wgt_pop = value * wgt
+    wgt = overlap_area / block10_group_5070_area
   ) |>
   group_by(GEOID) |> # within each block
   mutate(
@@ -124,14 +130,21 @@ raw_wgts <-
 pws_reweighted <-
   tbl(con, 'weighting.us_bg10_group_pws_v3') |>
   filter(PWSID %in% pwsid_w_contam) |>
+  group_by(GEOID, PWSID) |>
+  summarise(
+    overlap_area = sum(overlap_area),
+    value = first(value),
+    block10_group_5070_area = first(block10_group_5070_area),
+    .groups = "drop"
+  ) |> ## Deals with problem block groups PWSIDS in FL, VA, IA
   mutate(
     tract_geoid = substr(GEOID, 1, 11),
     wgt = overlap_area / block10_group_5070_area
   ) |>
-  group_by(GEOID) |> # within each block
+  group_by(GEOID) |>
   mutate(
     wgt_sum = sum(wgt),
-    wgt_normalized = if_else(wgt_sum > 1, wgt / wgt_sum, wgt) # only normalize if actually over 1
+    wgt_normalized = if_else(wgt_sum > 1, wgt / wgt_sum, wgt)
   ) |>
   ungroup() |>
   mutate(bg_wgt_pop = value * wgt_normalized) |>
@@ -149,11 +162,12 @@ pws_reweighted <-
         tract10_5070_area,
         epa_water_v3_5070_area,
         overlap_area
-      ),
+      ) |>
+      distinct(), #' Drops problem tract PWSID pairs in IA, FL, VA
     by = c('tract_geoid' = 'GEOID', 'PWSID')
   ) |>
   filter(
-    bg_wgt_pop != 0 ## Don't need tracts with no population. Extraneous to the analysis
+    bg_wgt_pop != 0
   ) |>
   collect()
 
