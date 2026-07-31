@@ -18,7 +18,7 @@ The final analysis-ready dataset is produced by `code/weight_contam_flow/05_comb
 | 1 | `01_ingest_shapefiles_duckdb.R`, `01_ingest_AK_HI_duckdb.R`, `01c_ingest_ntncs.R` | Load census and PWS shapefiles into DuckDB |
 | 2 | `02_intersect_census_pws.R` | Compute geometric intersection of census block groups and PWS boundaries in DuckDB |
 | 3 | `03_add_population_weights.R` | Areal interpolation and population weighting (see details below); writes `weighted_tract_level_ucmr_contam_wide.csv` and `weighted_pws_level_ucmr_contam_wide.csv` |
-| 4 | `04_tidy_results_data.R` | Pivot weighted data to long format; add contaminant group labels and state crosswalks |
+| 4 | `04_tidy_results_data.R` | Pivot weighted data to long format; add contaminant group labels and state crosswalks (Used for Shiny app out of project) |
 | 5 | `05_combine_covars.R` | Apply coverage and tract-type filters; join tract- and county-level covariates; produce the final analysis dataset |
 
 ## Weighting Methodology (Script 03)
@@ -49,7 +49,8 @@ to prevent denominator inflation.
 1. **PWS coverage threshold (>=50%)** — Tracts are retained only if at least 50%
    of the tract's total population is estimated to be served by one or more
    UCMR-participating public water systems (`pws_coverage_proportion >= 0.5`).
-   This reduces the dataset from ~67,102 to ~53,282 tracts (~80% retention).
+   This reduces the dataset from ~67,102 to ~53,282 tracts (~80% retention). These 
+   fell from a starting number of 73,057 tracts.
 2. **Special-use tract removal** — Tracts with FIPS suffix codes indicating
    special land use (980000–989999) are dropped from the contaminant data.
 3. **Covariate-side tract removal** — Water tracts (990000–999800) and
